@@ -1,0 +1,83 @@
+iterations: 2000
+# Linear anneal window for the upward fall-recovery assist force
+# (scale 1->0 over this many iterations). null -> defaults to `iterations`.
+assist_anneal_iters: null
+rollout_len: 32
+lr: 3.0e-4
+n_epochs: 5
+mb_size: 16384
+clip: 0.2
+value_coef: 1.0
+entropy_coef: 0.001   # lowered from 0.005 (entropy runaway); log_std also clamped
+max_grad_norm: 1.0
+dual_clip: 3.0
+target_kl: 0.02
+value_clip: true     # false is recommended for long runs: plain MSE value loss.
+                     # The clipped form is a +-clip trust region on V; at this
+                     # task's return scale (O(350)) it bound 95% of samples, which
+                     # left the critic permanently rate-limited.
+grad_clip_per_module: false  # true is recommended alongside value_clip=false:
+                     # separate actor/critic grad-norm clips. A shared global clip
+                     # lets the critic's large grad norm (~187) scale the actor's
+                     # effective step by ~0.005 (actor alone: ~0.5).
+kl_shock_factor: 0.0 # >0 enables rollback (3.0 is the validated value): snapshot at
+                     # update start, ROLL BACK the whole iteration if any minibatch
+                     # kl > factor*target_kl. The 1.5x early stop fires only after a
+                     # bad update is applied; a single such update (kl=0.08, return
+                     # 297->7) has killed a 30k-iteration run outright during the
+                     # entropy anneal. 0 = off.
+gamma: 0.99
+lam: 0.95
+lr_final: null   # cosine-decay target LR (null = fixed lr)
+kl_adaptive: false   # RSL-RL-style KL-adaptive LR (owns the LR; disables cosine + early stop)
+lr_min: 1.0e-5
+lr_max: 1.0e-3
+
+# ---- Action-smoothness regularization ---------------------------------------
+# Two one-sided hinge penalties on the actor's MEAN action, in tanh space
+# (tanh(mu)*action_scale = commanded radians). Both 0 = off, which is
+# bit-identical to a run without them. ctrl_dt and action_scale come from
+# cfg.env, not from here.
+#
+# TEMPORAL (lambda_smooth): |tanh(mu_t) - tanh(mu_{t-1})| beyond
+#     budget_j = |qd_ref_j|*ctrl_dt/action_scale * smooth_slack + smooth_eps_floor
+#   Actions are residuals on the MOVING reference (q_tar = ref_q + tanh(a)*scale),
+#   so the ideal residual is NOT constant. It is the PD offset compensating
+#   dynamic torques, which scales with reference speed. Hence a speed-proportional
+#   allowance plus a floor clamping quasi-static chatter. smooth_slack=0 gives a
+#   flat floor. SUPERSEDES reward-side w_arate (same quantity, worse pathway:
+#   it acts on SAMPLED actions so exploration noise adds a ~2*sigma^2 floor, and
+#   it is diluted through GAE credit assignment). When enabling this, drop
+#   w_arate 0.05 -> 0.01; running both at full strength stacks two temporal
+#   regularizers and measurably costs success (about 6 points in our runs).
+#   Requires n_epochs=1 (the anchor is the behaviour policy's mean); asserted.
+#
+# SPATIAL (lambda_spatial): a VARIABLE Lipschitz constraint that bounds the local
+#   gain |d tanh(mu)|/|d obs| against K = spatial_floor + spatial_slack*|qd_ref|*
+#   ctrl_dt/action_scale, so fast reference motion earns proportionally more
+#   sensitivity (where aggressive balance correction is legitimate) while
+#   quasi-static frames are clamped. Estimated by finite difference over a
+#   Gaussian ball on the NORMALIZED obs: for eps~N(0,s^2 I),
+#   E||f(s+eps)-f(s)||^2 = s^2*||J||_F^2 + O(s^4), so the FD form IS a
+#   single-probe Hutchinson estimator of the squared Jacobian norm, at one extra
+#   forward pass. DELIBERATELY not autograd.grad/create_graph: double-backward
+#   forces the MultiheadAttention encoders off their fused SDPA path (~2.5-3x
+#   actor cost); the cheap autograd.grad(mu.sum(), obs) trick measures the
+#   Jacobian ROW SUM, where symmetric left/right joint responses cancel (the
+#   wrong quantity for a bilaterally symmetric humanoid); exact-norm needs 23
+#   backward passes, and Hutchinson probing has the same variance as FD while
+#   still paying double-backward. Regularizing over a FINITE noise ball also
+#   matches the headline metric, which scores robustness under action noise
+#   0.05. Do not "upgrade" this without re-reading the above.
+#   Noise hits obs AND history[:,-1] (they are the same vector; see
+#   networks._features), otherwise the actor evades via the history encoder.
+#   Calibrate spatial_floor from the logged spatial/gain_p50 (clip the tail, not
+#   the whole distribution). NOTE: K is a GAIN bound while the temporal budget is
+#   a RATE bound. Same formula shape, different dimensions; tune independently.
+lambda_smooth: 0.0
+smooth_slack: 2.5
+smooth_eps_floor: 0.02
+lambda_spatial: 0.0
+spatial_noise_std: 0.05
+spatial_slack: 2.5
+spatial_floor: 0.0

@@ -1,0 +1,23 @@
+defaults:
+  - env: track
+  - algo: ppo
+  - network: rgmt
+  - reward: keypoint
+  - _self_
+experiment_name: rgmt_dev
+seed: 0
+device: cuda:0
+log_dir: runs
+motion_cache: null     # dir of a preprocessed corpus cache; if set, loaded directly
+motion_dir: null       # dir of .npz clips (built on the fly if no cache)
+motion_path: ???        # path to a GMR-retargeted .npz (supplied at run time)
+corpus_device: null    # corpus STORAGE device; null -> training device (GPU-resident,
+                       # ~0.5GB for a 4h corpus, removes ~40% of env.step). "cpu" for huge corpora.
+resume_from: null      # checkpoint (.pt) to resume model+optimizer+iteration from
+# every: checkpoint cadence. robust_every: in-loop success-gated eval cadence
+# (0 = off); runs THE metric (noisy repeats) on the test split of split_json
+# (full corpus if null) and, with mining, refreshes failure-weighted RSI from
+# a train-split pass. At 8192 envs, 600 iters ~ 11 min + ~2 min eval.
+eval: {every: 50, greedy: true, robust_every: 600, robust_envs: 256,
+       robust_noise: 0.05, robust_repeats: 3,
+       split_json: null, mining: true, mining_ema: 0.5}

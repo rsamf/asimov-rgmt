@@ -1,0 +1,18 @@
+# Sharpness raised after eval showed a degenerate stander at s_kp=1.0
+# (34cm keypoint error scored ~0.96). Sharper kernels -> real tracking gradient.
+w_kp: 1.0
+s_kp: 25.0
+w_rel: 0.3
+s_rel: 25.0
+w_kpv: 0.3   # velocity tracking must PAY (was 0.1)
+s_kpv: 0.4   # soft enough to give gradient (was 2.0; r_kpv sat at 0)
+w_rh: 0.2
+s_rh: 50.0
+w_rp: 0.05
+s_rp: 20.0
+w_rq: 0.15
+s_rq: 8.0
+w_action: 0.005
+w_arate: 0.01
+w_alive: 0.05
+w_fall: 1.0

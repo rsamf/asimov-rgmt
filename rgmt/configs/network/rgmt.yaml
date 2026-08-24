@@ -1,0 +1,4 @@
+n_embd: 128
+n_heads: 4
+actor_hidden: [512, 256]
+critic_hidden: [512, 256]

@@ -1,0 +1,8 @@
+motion_dir: ???        # directory of GMR-retargeted .npz clips (or set motion_path)
+motion_path: null      # single .npz alternative
+cache_dir: ???         # output cache directory
+physics_fps: 60
+src_fps: 30
+keypoint_links: null   # null -> rgmt.data.joint_map.KEYPOINT_LINKS
+ground_clips: true     # shift each clip in z so the lowest foot sole rests at the floor
+force: false

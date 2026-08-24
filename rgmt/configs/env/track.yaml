@@ -1,0 +1,44 @@
+num_envs: 4096
+control_decimation: 1
+dt: 0.0166666667         # 1/60; training scripts pass 1.0/60.0
+kp: 100.0
+kd: 5.0
+action_scale: 0.5
+foot_friction: 0.75      # DEPRECATED knob: sets only the GROUND-PLANE mu, which is
+                         # a no-op for foot-ground contact. The MJCF foot spheres
+                         # carry priority=1, friction=0.6, and mujoco-warp uses the
+                         # higher-priority geom's friction exclusively. Use
+                         # dr.friction_range to actually vary foot-ground friction.
+effort_limits: null      # null = uncapped (builder default 1e6) | "urdf" (per-joint
+                         # <limit effort> Nm from the URDF) | list[23].
+                         # PLANT-DEFINING: eval must match the trained value.
+dr: null                 # Domain randomization for sim2real: dict of DRConfig
+                         # kwargs (rgmt/env/domain_rand.py), e.g.
+                         # {friction_range: [0.4, 1.0], mass_scale_range: [0.9, 1.1],
+                         # kp_scale_range: [0.9, 1.1], kd_scale_range: [0.9, 1.1],
+                         # effort_scale_range: [0.8, 1.2], privileged: true}.
+                         # Train-gated (eval never randomizes); privileged adds
+                         # 6 dims to critic_obs (priv_dim changes).
+K: 9                     # history length-1 (T=10)
+L: 10                    # command half-window (S=21)
+episode_len: 1000
+z_fall: 0.12             # pelvis ~0.08 on the ground -> <0.12 = collapsed
+up_dot_min: 0.0          # body-up.z < 0 -> tilted past horizontal
+head_z_min: 0.3          # head keypoint abnormally low (paper's 3rd instability criterion)
+joint_err_done: 100.0
+root_err_done: 0.25      # SQUARED planar err (m^2) -> 0.5 m radius
+z_dev_done: 0.2          # |root_z - ref_z| > 0.2 m terminates (tracking failure)
+noise_level: 1.0         # multiplier on Table II command noise (0 disables)
+noise:
+  v: [0.5, 0.5, 0.2]   # _build_noise_dict uses v[0] as v_xy amplitude and v[2] as v_z; v[1] is ignored
+  w: 0.52
+  g: 0.05
+  q: 0.1
+keypoint_links: null     # null -> use rgmt.data.joint_map.KEYPOINT_LINKS
+recovery_fraction: 0.15
+drift_obs: false         # append [dp_body(3), cos/sin heading err(2)] per command frame (cmd 55->60)
+drift_obs_proprio: false # append current-frame drift features to o_t (obs 98->103)
+sampling_weights_json: null  # {clip_name: weight} JSON -> failure-weighted RSI
+push_force_max: 0.0      # N, horizontal pelvis pushes during training (0 = off)
+push_interval_s: 3.0
+push_duration_s: 0.15

@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.nebo
+/data/
+/runs/
+/outputs/
+/docs/reports/
+/private/
+/.nebo_archive/
