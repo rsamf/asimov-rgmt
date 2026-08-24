@@ -1,10 +1,37 @@
-# Asimov Motion Tracking (RGMT)
+<p align="center">
+  <h1 align="center">Asimov RGMT</h1>
 
-A PPO motion-tracking trainer for the [Asimov v1 humanoid](https://github.com/menloresearch/asimov-1) (23 actuated degrees of freedom), implementing [*Robust and Generalized Humanoid Motion Tracking*](https://arxiv.org/abs/2601.23080) (RGMT) on top of [Newton](https://github.com/newton-physics/newton) physics. Reference motions are GMR-retargeted AMASS clips produced by [asimov-gmr](https://github.com/rsamf/asimov-gmr); this repository trains a dynamics-conditioned command-aggregation policy that outputs residual actions on top of PD tracking.
+  <p align="center">
+    <img alt="Python Version" src="https://img.shields.io/badge/python-3.12-blue">
+    <a href="https://github.com/astral-sh/uv">
+      <img alt="Manager" src="https://img.shields.io/badge/managed%20by-uv-purple">
+    </a>
+    <a href="https://github.com/newton-physics/newton">
+      <img alt="Newton Simulator" src="https://img.shields.io/badge/simulator-newton-teal">
+    </a>
+  </p>
+
+  <p align="center">
+    A PPO motion-tracking trainer for the <a href="https://github.com/menloresearch/asimov-1">Asimov v1 humanoid</a>, implementing <a href="https://arxiv.org/abs/2601.23080"><em>Robust and Generalized Humanoid Motion Tracking</em></a> (RGMT) on top of <a href="https://github.com/newton-physics/newton">Newton</a> physics. This repository trains a dynamics-conditioned command-aggregation policy that outputs residual actions on top of PD tracking. Reference motions are GMR-retargeted AMASS clips produced by <a href="https://github.com/rsamf/asimov-gmr">asimov-gmr</a>.
+  </p>
+
+  <p align="center">
+    <img src="docs/cover.png" width="32%"><br>
+    <sub>Rendering logged by <a href="https://github.com/rsamf/nebo">Nebo</a></sub>
+  </p>
+
+  <p align="center">
+    <a href="#pretrained-model">Pretrained Model</a> •
+    <a href="#quick-start">Quick start</a> •
+    <a href="#evaluation">Evaluation</a> •
+    <a href="#visualization">Visualization</a> •
+    <a href="#architecture">Architecture</a>
+  </p>
+</p>
 
 ## Pretrained model
 
-A trained policy is published at [`rsamf/asimov-rgmt-medium`](https://huggingface.co/rsamf/asimov-rgmt-medium). It was trained on the easy and medium training splits of the asimov-gmr reference release only, under domain randomization and per-joint URDF torque caps, so its torque commands are ones the real robot can deliver. On the frozen 180-clip held-out test set (60 easy, 60 medium, 60 hard) it scores:
+A trained policy is published at [`rsamf/asimov-rgmt-medium`](https://huggingface.co/rsamf/asimov-rgmt-medium). The "-medium" suffix indicates the highest level of difficulty seen in training, so this policy was trained on the easy and medium training splits of the asimov-gmr reference release only, not hard. On the 180-clip test split (60 easy, 60 medium, 60 hard) it scores in zero-shot:
 
 | Metric | Value |
 |---|---|
@@ -15,7 +42,7 @@ A trained policy is published at [`rsamf/asimov-rgmt-medium`](https://huggingfac
 | Root-relative pose error | 51.9 mm |
 | Commanded jitter | 20.5 mrad |
 
-The hard clips were never seen in training, so the 55.0% hard number is zero-shot. See [docs/results.md](docs/results.md) for the evaluation protocol, more detailed results, and the main findings from the training campaign.
+See [docs/results.md](docs/results.md) for the evaluation protocol, more detailed results, and the main findings from the training campaign.
 
 ```bash
 # Download the checkpoint and evaluate it:
@@ -100,92 +127,6 @@ Data flows as follows: `.npz` clips are loaded by `MotionRef.load` (upsampling 3
 - **`rgmt/algos/`** holds `PPOTrainer`: dual-clip PPO with a target-KL early stop, an optional KL-shock rollback guard, optional cosine or KL-adaptive learning-rate control, and optional action-smoothness regularizers.
 
 Configuration is Hydra: `rgmt/configs/train.yaml` with groups `env/track`, `algo/ppo`, `network/rgmt`, and `reward/keypoint`. Comments in the config files record the reasoning behind tuning decisions; read them before changing reward weights or PPO hyperparameters.
-
-## Throughput notes
-
-- The corpus is stored on the GPU by default (`corpus_device: null` resolves to the training device; a 4-hour corpus is roughly 0.5 GB). This removes the per-step CPU gather and host-to-device copy, which accounted for about 40% of environment-step time when the corpus was CPU-resident. Set `corpus_device: cpu` only for corpora that do not fit.
-- `train.py` sets `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` to reduce allocator fragmentation. As a reference point, an RTX 3070 (8 GB) reaches about 70k environment steps per second at 2048 environments and about 104k at 4096 environments at roughly 5.9 GB peak memory.
-- Per-iteration timings are logged through [nebo](https://pypi.org/project/nebo/) (`train/time/rollout_s`, `train/time/update_s`, `train/time/env_steps_per_s`), and `scripts/profile_throughput.py` gives a step-time breakdown (simulation versus command window versus policy) for tuning new hardware.
-
-## Dataset format
-
-Reference motion data is **not** generated by this repository. You supply GMR-retargeted clips (the [asimov-gmr](https://github.com/rsamf/asimov-gmr) pipeline produces them); the format below is the contract `rgmt.data.motion.MotionRef.load` enforces.
-
-### Per-clip file: a NumPy `.npz`
-
-There is one `.npz` per motion clip, each containing exactly three arrays that share the same first dimension `F` (the source frame count):
-
-| Key | Shape | Meaning | Convention |
-|---|---|---|---|
-| `base_frame_pos`  | `(F, 3)` | Root (pelvis) world position | Meters, world frame `(x, y, z)`. |
-| `base_frame_wxyz` | `(F, 4)` | Root orientation quaternion | **`wxyz`** (w first); converted to `xyzw` and re-normalized on load. |
-| `joint_angles`    | `(F, 23)`| Actuated joint angles | Radians, in `ASIMOV_ACTUATED_JOINT_NAMES` order. |
-
-The dtype is flexible; all arrays are cast to `float32` on load.
-
-The loader enforces two checks and raises if they are violated:
-- `joint_angles` must have exactly 23 columns: the actuated joints only, not 25 (no neck) and not 27 (no toes).
-- The quaternion is read as `wxyz` (w first), not `xyzw`. GMR output is already `wxyz`, so do not pre-convert it.
-
-### Joint-angle column order (the 23 actuated joints)
-
-```
-left_hip_pitch, left_hip_roll, left_hip_yaw, left_knee, left_ankle_pitch, left_ankle_roll,
-right_hip_pitch, right_hip_roll, right_hip_yaw, right_knee, right_ankle_pitch, right_ankle_roll,
-waist_yaw,
-right_shoulder_pitch, right_shoulder_roll, right_shoulder_yaw, right_elbow, right_wrist_yaw,
-left_shoulder_pitch, left_shoulder_roll, left_shoulder_yaw, left_elbow, left_wrist_yaw
-```
-
-Note the right-arm-before-left-arm ordering, which is the canonical MJCF order. The columns must match this exactly, or every reference target is mis-mapped. The canonical list lives in `rgmt/data/joint_map.py::ASIMOV_ACTUATED_JOINT_NAMES`.
-
-### Frame rate
-
-`src_fps` must evenly divide `physics_fps` (the defaults are 30 and 60), so clips should be at 30 fps (or 60). The loader SLERP- or linearly upsamples to the physics rate and computes velocities by finite difference. You supply only per-frame pose, no velocities.
-
-### What you do not provide
-
-- No velocity arrays (they are computed by finite difference).
-- No keypoint or link Cartesian positions (they are computed by forward kinematics at preprocess time).
-- No neck or toe joints, only the 23 actuated joints.
-
-### Corpus layout
-
-For multi-clip training, place clips in a directory. The filename stem becomes the clip name, and the cache key is per clip:
-
-```
-motions/
-  walk_01.npz
-  dance_03.npz
-  ...
-```
-
-### Minimal example of writing a valid clip
-
-```python
-import numpy as np
-
-np.savez(
-    "walk_01.npz",
-    base_frame_pos  = pos.astype(np.float32),        # (F, 3) meters, world frame
-    base_frame_wxyz = quat_wxyz.astype(np.float32),  # (F, 4) quaternion, w first
-    joint_angles    = q.astype(np.float32),          # (F, 23) radians, canonical order
-)
-```
-
-### Caveats
-
-- **Grounding.** `base_frame_pos[:, 2]` is the root height used by reference-state initialization and the height and keypoint rewards. Retargeting that leaves the robot floating above the ground feeds that float straight into training: reference-state initialization drops the robot from the air, and the keypoint reward asks for feet above the floor. Ground the clips at the source by shifting each clip's `z` so the lowest foot-sole contact sits at the floor.
-- **Clip length.** A clip must survive upsampling with command-window lookahead room. With `L=10`, sampling needs roughly 21 or more upsampled frames of room, so very short clips (a few frames) are unusable. Aim for clips of at least one second.
-
-## Tests
-
-```bash
-uv run pytest                                  # all tests
-uv run pytest tests/test_reward.py -k name     # single file or test
-```
-
-Many tests are CUDA-gated and skip cleanly on CPU-only machines.
 
 ## License
 
