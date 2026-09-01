@@ -9,6 +9,9 @@
     <a href="https://github.com/newton-physics/newton">
       <img alt="Newton Simulator" src="https://img.shields.io/badge/simulator-newton-teal">
     </a>
+    <a href="https://github.com/rsamf/nebo">
+      <img alt="Nebo" src="https://img.shields.io/badge/logger-nebo-lightblue">
+    </a>
   </p>
 
   <p align="center">
@@ -16,8 +19,8 @@
   </p>
 
   <p align="center">
-    <img src="docs/cover.png" width="32%"><br>
-    <sub>Rendering logged by <a href="https://github.com/rsamf/nebo">Nebo</a></sub>
+    <img src="docs/policy_2x2.gif" width="66%"><br>
+    <sub>The policy in action</sub>
   </p>
 
   <p align="center">

@@ -113,7 +113,11 @@ assert m.nq == sim_qpos.shape[1], f"nq {m.nq} != qpos width {sim_qpos.shape[1]}"
 d = mujoco.MjData(m)
 ren = mujoco.Renderer(m, 480, 640)
 cam = mujoco.MjvCamera()
-cam.azimuth, cam.elevation, cam.distance = 135, -10, 2.2
+# --azimuth flips the viewpoint for clips that face away from the default
+# 135deg camera (e.g. kicks aimed away from the viewer).
+_azimuth = (float(sys.argv[sys.argv.index("--azimuth") + 1])
+            if "--azimuth" in sys.argv else 135)
+cam.azimuth, cam.elevation, cam.distance = _azimuth, -10, 2.2
 
 # common origin shift so both stay in frame
 origin = ref_qpos[0, :2].copy()
