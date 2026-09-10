@@ -41,7 +41,7 @@ nb.md(
     "PPO trainer for the Asimov v1 humanoid (23 DoF), "
     "dynamics-conditioned command aggregation."
 )
-nb.ui(view="dag", tracker="step")
+nb.ui(view="flat", tracker="step")
 
 
 def assist_scale_at(it: int, total: int) -> float:
@@ -391,22 +391,6 @@ def run_training(cfg) -> dict:
         name=cfg.experiment_name,
         config=OmegaConf.to_container(cfg, resolve=True),
     ):
-        nb.log_cfg({
-            "num_envs": cfg.env.num_envs,
-            "rollout_len": cfg.algo.rollout_len,
-            "iterations": cfg.algo.iterations,
-            "lr": cfg.algo.lr,
-            "n_epochs": cfg.algo.n_epochs,
-            "mb_size": cfg.algo.mb_size,
-            "clip": cfg.algo.clip,
-            "gamma": cfg.algo.gamma,
-            "lam": cfg.algo.lam,
-            "n_embd": cfg.network.n_embd,
-            "actor_hidden": list(cfg.network.actor_hidden),
-            "critic_hidden": list(cfg.network.critic_hidden),
-            "priv_dim": env.priv_dim,
-        })
-
         bundle = env.reset_all()
 
         # Assist-force anneal window. Defaults to the full training run so the

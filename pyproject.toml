@@ -8,7 +8,7 @@ authors = [{ name = "Richard Franklin" }]
 requires-python = ">=3.12"
 dependencies = [
     "hydra-core>=1.3.3",
-    "nebo[deploy]>=0.3.4",
+    "nebo[deploy]>=0.3.7",
     "newton>=1.5.0,<1.6",
     "mujoco-warp>=3.11",
     "mujoco>=3.11",
