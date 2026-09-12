@@ -8,3 +8,4 @@ def test_compose():
     assert cfg.network.n_embd == 128
     assert cfg.algo.lr > 0
     assert cfg.env.K == 9 and cfg.env.L == 10
+    assert cfg.mirror_augment is False      # augmentation is opt-in

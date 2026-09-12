@@ -26,7 +26,8 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPLIT = os.path.join(REPO, "rgmt", "data", "splits", "medium.json")
 
 
-def build_cfg(cache: str, log_dir: str, smoke: bool, device: str, seed: int):
+def build_cfg(cache: str, log_dir: str, smoke: bool, device: str, seed: int,
+              mirror: bool = False):
     kp, kd = leg_weighted_gains()
     return OmegaConf.create(dict(
         experiment_name="rgmt_medium_smoke" if smoke else "rgmt_medium",
@@ -36,6 +37,7 @@ def build_cfg(cache: str, log_dir: str, smoke: bool, device: str, seed: int):
         motion_cache=cache,
         motion_dir=None,
         motion_path=None,
+        mirror_augment=mirror,   # off in the released recipe
         env=dict(
             num_envs=256 if smoke else 8192,
             control_decimation=1,
@@ -144,9 +146,11 @@ if __name__ == "__main__":
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--smoke", action="store_true",
                     help="12-iteration pipeline smoke run at 256 envs")
+    ap.add_argument("--mirror", action="store_true",
+                    help="left-right mirror augmentation (2x train clips); off in the released recipe")
     args = ap.parse_args()
     if args.smoke:
         os.environ.setdefault("NEBO_NO_STORE", "1")
     stats = run_training(build_cfg(args.cache, args.log_dir, args.smoke,
-                                   args.device, args.seed))
+                                   args.device, args.seed, mirror=args.mirror))
     print("TRAINING COMPLETE. final stats:", stats)

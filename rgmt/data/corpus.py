@@ -66,10 +66,7 @@ class MotionCorpus:
                 raise ValueError("from_clips: clip loaded without keypoint_links")
         cat = {k: torch.cat([_clip_tensor(c, k).cpu() for c in clips], dim=0) for k in TENSOR_KEYS}
         lens = torch.tensor([c.n_frames for c in clips], dtype=torch.long)
-        starts = torch.zeros(len(clips), dtype=torch.long)
-        starts[1:] = torch.cumsum(lens, 0)[:-1]
-        ends = starts + lens - 1
-        frame_clip_id = torch.repeat_interleave(torch.arange(len(clips)), lens)
+        starts, ends, frame_clip_id = clip_bookkeeping(lens)
         return cls(
             physics_fps=ref.physics_fps, src_fps=ref.src_fps,
             actuated_idx=ref.actuated_idx.cpu(), actuated_names=list(ref.actuated_names),
@@ -264,10 +261,7 @@ class MotionCorpus:
             names.append(cm["name"]); lens.append(cm["n_frames"])
         cat = {k: torch.cat(parts[k], dim=0) for k in TENSOR_KEYS}
         lens_t = torch.tensor(lens, dtype=torch.long)
-        starts = torch.zeros(len(names), dtype=torch.long)
-        starts[1:] = torch.cumsum(lens_t, 0)[:-1]
-        ends = starts + lens_t - 1
-        frame_clip_id = torch.repeat_interleave(torch.arange(len(names)), lens_t)
+        starts, ends, frame_clip_id = clip_bookkeeping(lens_t)
         return cls(
             physics_fps=physics_fps, src_fps=src_fps,
             actuated_idx=torch.tensor(man["actuated_idx"], dtype=torch.long),
@@ -276,6 +270,18 @@ class MotionCorpus:
             clip_start=starts, clip_len=lens_t, clip_end=ends, frame_clip_id=frame_clip_id,
             clip_names=names, **cat,
         )
+
+
+def clip_bookkeeping(lens: torch.Tensor):
+    """(C,) clip lengths -> (clip_start, clip_end, frame_clip_id), on lens.device.
+    clip_end is the INCLUSIVE last global index of each clip."""
+    lens = lens.to(torch.long)
+    starts = torch.zeros_like(lens)
+    starts[1:] = torch.cumsum(lens, 0)[:-1]
+    ends = starts + lens - 1
+    frame_clip_id = torch.repeat_interleave(
+        torch.arange(lens.numel(), device=lens.device), lens)
+    return starts, ends, frame_clip_id
 
 
 def _write_clip_file(cache_dir, name: str, tensors: dict) -> str:

@@ -7,12 +7,6 @@ testing) and a ``@hydra.main`` ``main`` entry point for real training runs.
 from __future__ import annotations
 
 import os
-
-# Reduce CUDA allocator fragmentation (must be set before torch initializes
-# CUDA). The 3070 fit-test OOMed at 4096 envs with ~1 GB "reserved but
-# unallocated" — expandable segments reclaim that.
-os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
-
 import json
 import time
 
@@ -27,6 +21,7 @@ import warp as wp
 
 from rgmt.data.motion import MotionRef
 from rgmt.data.corpus import MotionCorpus
+from rgmt.data.mirror import mirror_corpus, mirror_split
 from rgmt.data.cache_key import file_sha256
 from rgmt.data.joint_map import KEYPOINT_LINKS
 from rgmt.assets.paths import ROBOT_XML, ROBOT_URDF
@@ -99,6 +94,12 @@ def _build_corpus(cfg, device, kp_links) -> MotionCorpus:
     a 4 h corpus is only ~0.5 GB. Set ``corpus_device: cpu`` for corpora that
     don't fit). ``physics_fps``/``src_fps`` are fixed at 60/30, matching
     preprocess defaults.
+
+    ``cfg.mirror_augment`` (train-only, default off) appends a left-right
+    mirrored copy of every clip (``<name>__mirror``, see rgmt.data.mirror) so
+    frame-uniform RSI mirrors each episode with p = 0.5. Mirroring runs on the
+    CPU-resident tensors BEFORE the storage move, keeping the 3x transient off
+    the GPU.
     """
     storage = cfg.get("corpus_device") or device
     if cfg.get("motion_cache"):
@@ -110,8 +111,7 @@ def _build_corpus(cfg, device, kp_links) -> MotionCorpus:
             src_fps=30,
             keypoint_links=kp_links,
         )
-        return corpus.to_storage(storage)
-    if cfg.get("motion_dir"):
+    elif cfg.get("motion_dir"):
         npz = sorted(Path(cfg.motion_dir).glob("*.npz"))
         if not npz:
             raise ValueError(f"motion_dir has no .npz: {cfg.motion_dir}")
@@ -124,10 +124,16 @@ def _build_corpus(cfg, device, kp_links) -> MotionCorpus:
             for p in npz
         ]
         corpus = MotionCorpus.from_clips(clips, [p.stem for p in npz], kp_links, output_device=device)
-        return corpus.to_storage(storage)
-    ref = MotionRef.load(cfg.motion_path, ROBOT_XML, ROBOT_URDF, device="cpu",
-                         keypoint_links=kp_links, ground=True)
-    return MotionCorpus.from_clips([ref], ["clip0"], kp_links, output_device=device).to_storage(storage)
+    else:
+        ref = MotionRef.load(cfg.motion_path, ROBOT_XML, ROBOT_URDF, device="cpu",
+                             keypoint_links=kp_links, ground=True)
+        corpus = MotionCorpus.from_clips([ref], ["clip0"], kp_links, output_device=device)
+    if cfg.get("mirror_augment", False):
+        n0, f0 = corpus.n_clips, corpus.n_frames
+        corpus = mirror_corpus(corpus)
+        print(f"[train] mirror_augment: {n0} -> {corpus.n_clips} clips, "
+              f"{f0} -> {corpus.n_frames} frames")
+    return corpus.to_storage(storage)
 
 
 def compose_rsi_weights(corpus_names, split, fail_ema, mining_boost) -> dict:
@@ -251,6 +257,12 @@ def run_training(cfg) -> dict:
     mining_boost = float(OmegaConf.select(cfg, "eval.mining_boost", default=3.0))
 
     split = load_split(split_path) if split_path else None
+    mirror_on = bool(cfg.get("mirror_augment", False))
+    if split is not None and mirror_on:
+        # Mirrored train clips join the RSI universe and the mining pass;
+        # mirrored test clips are in neither role (weight 0, no leak) and the
+        # test eval stays originals-only so headline numbers remain comparable.
+        split = mirror_split(split)
     # Optional clip -> difficulty label map (if the split carries one) for per-class in-loop
     # eval curves (eval/test_success_<label> etc.).
     _diff_map = (split or {}).get("difficulty") or {}
@@ -363,6 +375,14 @@ def run_training(cfg) -> dict:
     resume_from = cfg.get("resume_from")
     if resume_from:
         ck = torch.load(resume_from, map_location=device, weights_only=False)
+        ck_mirror = bool((ck.get("config") or {}).get("mirror_augment", False))
+        if ck_mirror != mirror_on:
+            # The mining state (clip_fail_ema) and the sampling universe are
+            # keyed by clip name; flipping the flag would otherwise surface as
+            # an opaque "names not in corpus" from set_clip_sampling_weights.
+            raise ValueError(
+                f"resume_from: checkpoint was trained with mirror_augment={ck_mirror} "
+                f"but cfg.mirror_augment={mirror_on}; keep the flag consistent")
         model.load_state_dict(ck["model"])
         opt = getattr(ppo, "opt", None) or getattr(ppo, "optimizer", None)
         if opt is not None and ck.get("opt") is not None:
@@ -391,6 +411,8 @@ def run_training(cfg) -> dict:
         name=cfg.experiment_name,
         config=OmegaConf.to_container(cfg, resolve=True),
     ):
+        nb.log_text("corpus", f"{corpus.n_clips} clips, {corpus.n_frames} frames, "
+                              f"mirror_augment={mirror_on}")
         bundle = env.reset_all()
 
         # Assist-force anneal window. Defaults to the full training run so the

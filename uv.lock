@@ -77,8 +77,8 @@ requires-dist = [
     { name = "hydra-core", specifier = ">=1.3.3" },
     { name = "mujoco", specifier = ">=3.11" },
     { name = "mujoco-warp", specifier = ">=3.11" },
-    { name = "nebo", extras = ["deploy"], specifier = ">=0.3.4" },
-    { name = "newton", specifier = ">=1.5.0,<1.6" },
+    { name = "nebo", extras = ["deploy"], specifier = ">=0.3.7" },
+    { name = "newton", specifier = ">=1.6.0,<1.7" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "omegaconf", specifier = ">=2.3" },
     { name = "pyglet", specifier = ">=2.1.15" },
@@ -888,7 +888,7 @@ wheels = [
 
 [[package]]
 name = "nebo"
-version = "0.3.4"
+version = "0.3.7"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastapi" },
@@ -897,9 +897,9 @@ dependencies = [
     { name = "uvicorn" },
     { name = "websockets" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/65/a5/dd9d8671d03bfc5280ee2769de3edcbe5a654c7ccadfb395c18b54e8e24b/nebo-0.3.4.tar.gz", hash = "sha256:7310d610e9a7c54ad1a4e3e00a0fd6b986b273b710a2a427802cd6a70241ef54", size = 40943405, upload-time = "2026-08-04T01:49:30.06Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e2/fc/0a464af38a22dcc7227a98973a9b28b00b4dd2301aa3b8d64da1576877d1/nebo-0.3.7.tar.gz", hash = "sha256:c73e995eb63fe355897df627d0e2386fe5d9757820da81fe5223a1c3d34aac81", size = 41946984, upload-time = "2026-08-20T00:26:43.593Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/8a/d4dfd618986ff2aec57ef394a0d8806544e5dd4087b04fe6a99959662e5e/nebo-0.3.4-py3-none-any.whl", hash = "sha256:1c9c15af0d616228a3b6d2a2b092e8d7e625774c179a53bde0c57bc1dc573c64", size = 872646, upload-time = "2026-08-04T01:49:27.025Z" },
+    { url = "https://files.pythonhosted.org/packages/74/31/a2b797138f22c84238f116eaca30421348fef12502c1510f3e542fdac72b/nebo-0.3.7-py3-none-any.whl", hash = "sha256:8d09e74a467b2b0e4f642b93dbbec01d5ee12c103e0054b77a1b0bfe779e8686", size = 1215562, upload-time = "2026-08-20T00:26:40.79Z" },
 ]
 
 [package.optional-dependencies]
@@ -918,13 +918,13 @@ wheels = [
 
 [[package]]
 name = "newton"
-version = "1.5.0"
+version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "warp-lang" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ef/a8/706cd18af6c42a47f750a129c2605e7ed9af5800a37665ad78b870d34383/newton-1.5.0-py3-none-any.whl", hash = "sha256:a9eef789e2e0f857e40df3382f101b5faadff5dd8a61cb86dd5ec5382dd27865", size = 5556791, upload-time = "2026-08-11T13:06:15.61Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/d0/1955c2623762fd1d9f3bc0bb9866b6c0669e1e277202bdc16772520d7da1/newton-1.6.0-py3-none-any.whl", hash = "sha256:5eedebe17d7261ca39e8f97c2f2f20e22e7264d0aed01782f3cb1dd60180b872", size = 6159741, upload-time = "2026-09-10T13:50:10.666Z" },
 ]
 
 [[package]]
@@ -1934,16 +1934,16 @@ wheels = [
 
 [[package]]
 name = "warp-lang"
-version = "1.16.0"
+version = "1.17.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "numpy" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/73/8a/8be711f3b5431a6e0bdb97117d681b03cf2bb95d6fcf8869861900898d88/warp_lang-1.16.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:19a7590c4484e8250ab19165311d2a1774138663b361c41e8be2865c7515c4ae", size = 25221601, upload-time = "2026-08-03T02:26:38.389Z" },
-    { url = "https://files.pythonhosted.org/packages/1d/3d/47feef2eee4739437e19d6949ea231ca4181c9eacbaa39144761e6130d94/warp_lang-1.16.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:96449fc1e3b354185e2f09434fb794b5953ab2e8673b104d7e7f48d5d418bb35", size = 163074225, upload-time = "2026-08-03T02:27:03.632Z" },
-    { url = "https://files.pythonhosted.org/packages/db/96/0c2b070b3101c669955cafd36262548b2e8b00dfdeda3aeb7afbc0f9d65c/warp_lang-1.16.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:d4715171bd6821436b82293d774c9a082ace08215c189572b4348d1e48fb8ee8", size = 167563789, upload-time = "2026-08-03T02:27:37.512Z" },
-    { url = "https://files.pythonhosted.org/packages/7e/17/c98fab81156f0d25f17200f52f69210b94a9abba101066736df8cc493522/warp_lang-1.16.0-py3-none-win_amd64.whl", hash = "sha256:8690c9096e0a271985339d4aa4b37675e7d62852620ca861ac032dc85b124542", size = 146387135, upload-time = "2026-08-03T02:28:17.956Z" },
+    { url = "https://files.pythonhosted.org/packages/be/b0/9b1de407fa10b380f5ca4ed1c3e5b129be55ea26a927c7a49e45cdde14b0/warp_lang-1.17.0-py3-none-macosx_11_0_arm64.whl", hash = "sha256:f2fec43afb81caa2190c0b7fa3aaf4d869f3599839f0c40b9ead84331f91e993", size = 27544218, upload-time = "2026-08-31T05:52:29.177Z" },
+    { url = "https://files.pythonhosted.org/packages/a6/a1/e11aa6898e8bbb6910e89fe31a3338fb2566f038912010875c072e6dafd1/warp_lang-1.17.0-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:47cd93636828dd16e55eeb4e77a0e3547b5fb0f383000a3d228629df68f28fd8", size = 164347636, upload-time = "2026-08-31T05:53:14.441Z" },
+    { url = "https://files.pythonhosted.org/packages/6e/4f/a17b1f0ebfeabe37326f01afb6109961f20a0165c1258242f46d10a554f5/warp_lang-1.17.0-py3-none-manylinux_2_34_aarch64.whl", hash = "sha256:5051271048da956a8b94e2db9771ce60ce9591a3ac5bb49037f3d6812d1eea00", size = 172665443, upload-time = "2026-08-31T05:53:52.47Z" },
+    { url = "https://files.pythonhosted.org/packages/ff/7a/36306a503085cbfc79c35a28e441c59dd1d8070d2dd65152345ebf2dfec2/warp_lang-1.17.0-py3-none-win_amd64.whl", hash = "sha256:ca35c82242a7553046f09023bbe56750b5c3d9af72625bd1a905a56d3189771d", size = 151236515, upload-time = "2026-08-31T05:54:27.944Z" },
 ]
 
 [[package]]

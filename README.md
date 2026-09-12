@@ -71,6 +71,10 @@ uv run python scripts/train_medium.py --cache cache/
 
 `rgmt.train` can also build a corpus on the fly from `motion_dir=` (a directory of `.npz` clips) or a single `motion_path=` clip; the precedence is `motion_cache > motion_dir > motion_path`. The offline cache is strongly preferred because it precomputes the expensive per-clip upsampling and forward-kinematics keypoints once. `resume_from=<ckpt.pt>` resumes a run (model, optimizer, and iteration counter).
 
+### Mirror augmentation
+
+`mirror_augment=true` (or `scripts/train_medium.py --mirror`) is a left-right flip for motion data. At corpus load time every clip gets a mirrored twin named `<name>__mirror`: root position and velocity negate y, the root orientation and angular velocity are reflected across the sagittal plane, and joint angles are swapped left for right and negated (the Asimov's right-side hinge axes are the mirror images of the left, so the sign is uniform; `tests/test_mirror.py` derives it from the asset). Frame-uniform sampling over the doubled corpus then mirrors each episode with probability one half. The held-out test split stays originals-only, so evaluation numbers remain comparable; mirrored train clips join the sampling universe and the mining pass. The flag is recorded in the checkpoint and a resume must keep it. The released checkpoint did not use it. To eyeball a mirrored clip: `uv run python -m rgmt.view --mode replay --cache cache/ --mirror --clip "<name>__mirror"`.
+
 To obtain training data, follow the [asimov-gmr](https://github.com/rsamf/asimov-gmr) pipeline. It turns your own AMASS copy into the exact reference release this repository trains on, including difficulty labels and the train/test split. AMASS itself carries a non-commercial research license and cannot be redistributed, which is why no motion data ships with either repository.
 
 ## Evaluation
@@ -113,18 +117,19 @@ This opens a Newton GL window by default. Close it or press Ctrl-C to exit; clip
 | `--mode replay\|pd\|policy` | Input mode: kinematic, zero-action PD, or trained checkpoint. |
 | `--cache DIR` | Preprocessed corpus directory (or use `--motion-path clip.npz` for one raw clip). |
 | `--clip NAME` | Clip to play (filename stem). The default is the first clip; `--list` prints all names. |
+| `--mirror` | Append left-right mirrored copies of every clip (`<name>__mirror`) to the corpus. |
 | `--ckpt FILE.pt` | Checkpoint for `--mode policy`. |
 | `--viewer gl\|null\|rerun\|viser` | Viewer backend; `gl` opens a window and `null` is a headless smoke run. |
 | `--steps N` / `--no-loop` | Limit the step count, or stop at the clip end instead of looping. |
 | `--fps F` / `--headless` / `--device` | GL pacing, windowless GL, and CUDA device selection. |
 
-`scripts/render_policy.py` renders a side-by-side reference-versus-policy MP4 offscreen, with no display needed.
+`scripts/render_policy.py` renders a side-by-side reference-versus-policy MP4 offscreen, with no display needed. `scripts/render_mirror.py` does the same for a clip and its left-right mirror (`--grep` selects clips by name), the quickest visual audit of the mirror augmentation.
 
 ## Architecture
 
 Data flows as follows: `.npz` clips are loaded by `MotionRef.load` (upsampling 30 to 60 fps, finite-difference velocities, forward-kinematics keypoints), `rgmt.preprocess` bakes per-clip safetensors plus a manifest, `MotionCorpus` holds all clips as concatenated flat tensors, `TrackEnv` composes the simulator, corpus, and reward into the policy input bundle, and `PPOTrainer` optimizes `RGMTActorCritic`.
 
-- **`rgmt/data/`** holds the data layer. `joint_map.py` is the canonical source of truth for the 23 actuated joint names in MJCF order plus the keypoint links. `motion.py` enforces the `.npz` contract described below. `corpus.py` provides clip-boundary bookkeeping over flat tensors, and `cache_key.py` keys the preprocess cache on source hash, URDF hash, frame rates, keypoint links, and schema version so unchanged clips are skipped.
+- **`rgmt/data/`** holds the data layer. `joint_map.py` is the canonical source of truth for the 23 actuated joint names in MJCF order plus the keypoint links. `motion.py` enforces the `.npz` contract: three arrays sharing a frame count F, `base_frame_pos (F,3)`, `base_frame_wxyz (F,4)` (w first), and `joint_angles (F,23)` in `ASIMOV_ACTUATED_JOINT_NAMES` order, at 30 fps (see the module docstring). `mirror.py` implements the left-right mirror augmentation. `corpus.py` provides clip-boundary bookkeeping over flat tensors, and `cache_key.py` keys the preprocess cache on source hash, URDF hash, frame rates, keypoint links, and schema version so unchanged clips are skipped.
 - **`rgmt/env/`** holds the simulation layer. `sim.py` wraps Newton and mujoco-warp around the vendored robot asset in `rgmt/assets/asimov-v1/` (a freejoint plus 25 hinges: 23 actuated and 2 passive neck joints). `track_env.py` composes the simulator, corpus, and `reward.py` into the policy bundle, with exact shape contracts documented in its docstring: `obs (N,98)`, `history (N,10,98)`, `cmd_window (N,21,55)`, `critic_obs (N,187)` in the paper-base configuration. Training-time command noise (paper Table II) and the termination criteria live here. `domain_rand.py` implements per-environment dynamics randomization for sim-to-real transfer.
 - **`rgmt/policy/`** holds `RGMTActorCritic`. A causal self-attention `HistoryEncoder` over the 10-step proprioception history produces a dynamics embedding, which the `CommandEncoder` uses as the cross-attention query over the 21-frame command window. The critic is asymmetric and sees privileged noise-free observations. The `RunningMeanStd` observation normalizer is part of the checkpoint.
 - **`rgmt/algos/`** holds `PPOTrainer`: dual-clip PPO with a target-KL early stop, an optional KL-shock rollback guard, optional cosine or KL-adaptive learning-rate control, and optional action-smoothness regularizers.

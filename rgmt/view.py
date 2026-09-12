@@ -31,6 +31,7 @@ from rgmt.assets.paths import ROBOT_URDF, ROBOT_XML
 from rgmt.data.cache_key import file_sha256
 from rgmt.data.corpus import MotionCorpus
 from rgmt.data.joint_map import KEYPOINT_LINKS
+from rgmt.data.mirror import mirror_corpus
 from rgmt.data.motion import MotionRef
 from rgmt.env.track_env import TrackEnv, EnvConfig
 
@@ -40,10 +41,14 @@ def _load_corpus(args, device) -> MotionCorpus:
     if args.motion_path:
         ref = MotionRef.load(args.motion_path, ROBOT_XML, ROBOT_URDF, device="cpu",
                              keypoint_links=KEYPOINT_LINKS)
-        return MotionCorpus.from_clips([ref], ["clip0"], KEYPOINT_LINKS, output_device=device)
-    return MotionCorpus.load_cache(
-        args.cache, output_device=device, urdf_hash=file_sha256(ROBOT_URDF),
-        physics_fps=60, src_fps=30, keypoint_links=KEYPOINT_LINKS)
+        corpus = MotionCorpus.from_clips([ref], ["clip0"], KEYPOINT_LINKS, output_device=device)
+    else:
+        corpus = MotionCorpus.load_cache(
+            args.cache, output_device=device, urdf_hash=file_sha256(ROBOT_URDF),
+            physics_fps=60, src_fps=30, keypoint_links=KEYPOINT_LINKS)
+    if getattr(args, "mirror", False):
+        corpus = mirror_corpus(corpus)      # adds <name>__mirror clips (visual check)
+    return corpus
 
 
 def _make_viewer(kind: str, headless: bool):
@@ -85,6 +90,8 @@ def main() -> None:
     p.add_argument("--no-loop", action="store_true", help="stop at clip end instead of looping")
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--list", action="store_true", help="print clip names and exit")
+    p.add_argument("--mirror", action="store_true",
+                   help="append left-right mirrored copies of every clip (<name>__mirror)")
     args = p.parse_args()
 
     device = torch.device(args.device)

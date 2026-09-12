@@ -30,7 +30,11 @@ corpus = MotionCorpus.load_cache(
 name_to_id = {n: i for i, n in enumerate(corpus.clip_names)}
 
 def clip_stats(name):
-    c = name_to_id[name]
+    # Mirror-augmented runs dump <name>__mirror clips that the cache does not
+    # hold; every stat below is mirror-invariant, so read the original's.
+    c = name_to_id.get(name)
+    if c is None:
+        c = name_to_id[name.removesuffix("__mirror")]
     s, e = int(corpus.clip_start[c]), int(corpus.clip_end[c])
     v = corpus.base_lin_vel[s:e]
     speed = v[:, :2].norm(dim=-1)
