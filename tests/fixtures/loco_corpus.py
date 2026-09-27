@@ -2,7 +2,10 @@
 
 Ten 60 fps clips with consistent finite-difference velocities and keypoints
 from a toy leg model (feet swing in antiphase in the heading frame while the
-root moves). Classes match the asimov-gmr taxonomy.
+root moves). Like real capture, every moving clip starts and ends standing:
+speed, yaw rate and foot swing ramp in over the first ``ramp`` seconds and out
+over the last, which is the transition data motion matching relies on to leave
+and re-enter idle. Classes match the asimov-gmr taxonomy.
 """
 import math
 import torch
@@ -22,16 +25,20 @@ def _grad(x: torch.Tensor, fps: int) -> torch.Tensor:
     return torch.gradient(x, spacing=1.0 / fps, dim=0)[0]
 
 
-def _clip(n: int, fps: int, vel_xy, yaw0: float, yaw_rate: float, moving: bool):
+def _clip(n: int, fps: int, vel_xy, yaw0: float, yaw_rate: float, moving: bool, ramp: float):
     t = torch.arange(n, dtype=torch.float32) / fps
-    xy = torch.stack([vel_xy[0] * t, vel_xy[1] * t], -1)
-    yaw = yaw0 + yaw_rate * t
+    T = (n - 1) / fps
+    env = torch.clamp(torch.minimum(t / ramp, (T - t) / ramp), 0.0, 1.0)   # stand -> move -> stand
+    dt = 1.0 / fps
+    cum = torch.cumsum(env, 0) * dt - env * dt                            # integral of env from 0
+    xy = torch.stack([vel_xy[0] * cum, vel_xy[1] * cum], -1)
+    yaw = yaw0 + yaw_rate * cum
     base_pos = torch.cat([xy, torch.full((n, 1), 0.70)], -1)
     base_quat = quat_from_yaw(yaw)
-    amp = 0.25 if moving else 0.0
+    amp = (0.25 if moving else 0.0) * env
     phase = torch.sin(2 * math.pi * _STEP_HZ * t)
     swing = amp * phase
-    lift = (0.05 if moving else 0.0) * torch.clamp(phase, min=0.0)
+    lift = (0.05 if moving else 0.0) * env * torch.clamp(phase, min=0.0)
     # feet in the heading frame: left at +y, right at -y, antiphase swing
     lf_h = torch.stack([swing, torch.full((n,), 0.10), lift], -1)
     rf_h = torch.stack([-swing, torch.full((n,), -0.10), (0.05 if moving else 0.0) - lift], -1)
@@ -51,7 +58,7 @@ def _clip(n: int, fps: int, vel_xy, yaw0: float, yaw_rate: float, moving: bool):
     return {
         "base_pos": base_pos, "base_quat": base_quat,
         "base_lin_vel": _grad(base_pos, fps),
-        "base_ang_vel": torch.stack([torch.zeros(n), torch.zeros(n), torch.full((n,), yaw_rate)], -1),
+        "base_ang_vel": torch.stack([torch.zeros(n), torch.zeros(n), yaw_rate * env], -1),
         "joint_q": joint_q, "joint_qd": _grad(joint_q, fps),
         "kp_pos_world": kp, "kp_vel_world": _grad(kp, fps),
     }
@@ -71,11 +78,11 @@ _SPECS = [  # name, class, planar velocity (world), initial yaw, yaw rate, movin
 ]
 
 
-def make_loco_corpus(fps: int = 60, seconds: float = 4.0, device="cpu"):
+def make_loco_corpus(fps: int = 60, seconds: float = 4.0, device="cpu", ramp: float = 0.5):
     n = int(seconds * fps)
     clips, names, classes = [], [], {}
     for name, cls, v, yaw0, w, moving in _SPECS:
-        clips.append(_clip(n, fps, v, yaw0, w, moving)); names.append(name); classes[name] = cls
+        clips.append(_clip(n, fps, v, yaw0, w, moving, ramp)); names.append(name); classes[name] = cls
     cat = {k: torch.cat([c[k] for c in clips], 0).to(device) for k in clips[0]}
     lens = torch.tensor([n] * len(clips))
     starts, ends, fcid = clip_bookkeeping(lens)

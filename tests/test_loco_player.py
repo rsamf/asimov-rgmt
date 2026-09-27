@@ -40,7 +40,7 @@ def test_reset_places_root_and_emits_current_frame_first():
 
 def test_anchor_rotates_velocities_and_root_path():
     corpus, p = _player()
-    f0 = _start(corpus, "walk_fwd") + 5              # walks along clip +x at 1 m/s
+    f0 = _start(corpus, "walk_fwd") + 45             # plateau: walks along clip +x at 1 m/s
     p.reset(f0, xy=(0.0, 0.0), yaw=math.pi / 2)        # but the character faces +y
     a = p.advance(); b = p.advance()
     v = a["base_lin_vel"][0]
