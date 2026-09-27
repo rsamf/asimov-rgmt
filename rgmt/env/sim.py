@@ -246,6 +246,13 @@ class NewtonSim:
         builder.default_shape_cfg.gap = 0.0
         builder.replicate(single, self.num_envs)
         builder.add_ground_plane()
+        # newton 1.6 defaults Control.joint_target_q to the COORD layout
+        # (nq entries per env). This class writes PD targets at DOF indices
+        # with an nqd stride (see step / _ctrl_target_flat and the guard
+        # below), so pin the legacy DOF layout; Model snapshots the flag at
+        # finalize time.
+        if hasattr(newton, "use_coord_layout_targets"):
+            newton.use_coord_layout_targets = False
         self.model = builder.finalize()
 
         # newton 1.5 rewrote replicate() as a single-pass merge. Everything
