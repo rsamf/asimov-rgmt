@@ -70,6 +70,20 @@ class CorpusConfig:
 
 
 @dataclass
+class CameraConfig:
+    follow: bool = True                  # third-person follow camera in play.py (False = Newton fly camera)
+    distance: float = 3.0                # m behind the robot along its heading
+    height: float = 1.6                  # m above the ground
+    target_height: float = 0.8           # m above the ground the camera looks at (root height)
+    halflife: float = 0.25               # s, smoothing of the followed position and heading
+
+
+@dataclass
+class SceneConfig:
+    camera: CameraConfig = field(default_factory=CameraConfig)
+
+
+@dataclass
 class LocoConfig:
     fps: int = 60
     src_fps: int = 30
@@ -79,6 +93,7 @@ class LocoConfig:
     search: SearchConfig = field(default_factory=SearchConfig)
     blend: BlendConfig = field(default_factory=BlendConfig)
     corpus: CorpusConfig = field(default_factory=CorpusConfig)
+    scene: SceneConfig = field(default_factory=SceneConfig)
 
 
 def load_config(path: str | None = None, overrides: Sequence[str] = ()) -> LocoConfig:

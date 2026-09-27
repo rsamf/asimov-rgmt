@@ -39,3 +39,11 @@ corpus:
       reason: "martial-arts stance: pelvis faces off the direction of travel (asimov-gmr QA outlier)"
     - name: "ACCAD__MartialArtsWalksTurns_c3d__E10 - side step right"
       reason: "martial-arts stance: pelvis faces off the direction of travel (asimov-gmr QA outlier)"
+
+scene:
+  camera:                  # play.py third-person camera; keys then drive only the robot
+    follow: true           # false = Newton's free fly camera (WASD/QE move the camera again)
+    distance: 3.0          # m behind the robot along its heading
+    height: 1.6            # m above the ground
+    target_height: 0.8     # m above the ground the camera looks at
+    halflife: 0.25         # s; smoothing of the followed position and heading

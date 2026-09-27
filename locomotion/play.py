@@ -4,7 +4,9 @@
     uv run python -m locomotion.play --viewer null --script "w:2,wd:1,q:1" --seconds 4
 
 Keys in the GL window: W/A/S/D translate in the heading frame, Q/E turn,
-Space resets to the origin. The robot is teleported to every controller frame
+Space resets to the origin. A third-person camera follows the robot and the
+viewer's own key-driven camera flight is disabled (``--free-camera`` restores
+it; the mouse still orbits and zooms). The robot is teleported to every controller frame
 through the simulator's kinematic reset (exactly what ``rgmt.view --mode
 replay`` does); physics never steps. An overlay draws the predicted
 trajectory; the clip/class/speed line is shown in the viewer's stats panel
@@ -28,6 +30,7 @@ from locomotion.command import Command, ScriptedSource, from_keys
 from locomotion.config import load_config
 from locomotion.controller import MotionMatchingController
 from locomotion.corpus import load_locomotion_corpus
+from locomotion.geom import wrap_angle, yaw_from_quat
 
 _KEYS = ("w", "a", "s", "d", "q", "e")
 
@@ -44,6 +47,59 @@ def _teleport(sim: NewtonSim, actuated_idx: torch.Tensor, frame: dict, device) -
     hinge_qd[:, actuated_idx] = frame["joint_qd"].to(device)
     sim.reset_idx(torch.arange(1, device=device), frame["base_pos"].to(device), frame["base_quat"].to(device),
                   frame["base_lin_vel"].to(device), frame["base_ang_vel"].to(device), hinge_q, hinge_qd)
+
+
+class FollowCamera:
+    """Third-person camera: behind the robot along its heading, above it,
+    looking at the root. Position and heading are smoothed with a half-life so
+    turns swing the view rather than snap it. ``attach`` zeroes the viewer's
+    key-driven camera speed so WASD/QE drive only the robot."""
+
+    def __init__(self, cfg, fps: int):
+        self.cfg = cfg
+        self.dt = 1.0 / float(fps)
+        self.reset()
+
+    def reset(self) -> None:
+        self._xy = None
+        self._yaw = 0.0
+
+    def _blend(self) -> float:
+        return 1.0 - 0.5 ** (self.dt / max(self.cfg.halflife, 1e-6))
+
+    def update(self, root_xy, yaw: float):
+        """Smoothed camera position (x, y, z) and look-at target (x, y, z)."""
+        x, y = float(root_xy[0]), float(root_xy[1])
+        yaw = float(yaw)
+        if self._xy is None:
+            self._xy, self._yaw = [x, y], yaw
+        else:
+            a = self._blend()
+            self._xy[0] += (x - self._xy[0]) * a
+            self._xy[1] += (y - self._xy[1]) * a
+            self._yaw += wrap_angle(yaw - self._yaw) * a
+        c = self.cfg
+        pos = (self._xy[0] - c.distance * math.cos(self._yaw),
+               self._xy[1] - c.distance * math.sin(self._yaw), c.height)
+        target = (self._xy[0], self._xy[1], c.target_height)
+        return pos, target
+
+    def attach(self, viewer) -> None:
+        if hasattr(viewer, "camera_speed"):
+            viewer.camera_speed = 0.0
+
+    def apply(self, viewer, root_xy, yaw: float) -> None:
+        cam = getattr(viewer, "camera", None)
+        if cam is None:
+            return
+        pos, target = self.update(root_xy, yaw)
+        try:
+            from pyglet.math import Vec3
+            pos, target = Vec3(*pos), Vec3(*target)
+        except Exception:  # noqa: BLE001 - fake/headless cameras take plain tuples
+            pass
+        cam.pos = pos
+        cam.look_at(target)
 
 
 class TrajectoryOverlay:
@@ -82,6 +138,8 @@ def run(args) -> int:
     cfg = load_config(args.config, args.set)
     if args.corpus:
         cfg.corpus.cache_dir = args.corpus
+    if args.free_camera:
+        cfg.scene.camera.follow = False
     corpus, meta = load_locomotion_corpus(cfg, device)
     ctl = MotionMatchingController(corpus, meta, cfg, device=device)
     ctl.reset()
@@ -98,6 +156,10 @@ def run(args) -> int:
         except Exception:
             pass
     overlay = TrajectoryOverlay()
+    follow = None
+    if cfg.scene.camera.follow and getattr(viewer, "camera", None) is not None:
+        follow = FollowCamera(cfg.scene.camera, cfg.fps)
+        follow.attach(viewer)
     script = ScriptedSource(args.script, fps=cfg.fps) if args.script else None
     can_poll = hasattr(viewer, "is_key_down") and args.viewer == "gl" and not args.headless
 
@@ -115,11 +177,15 @@ def run(args) -> int:
             elif can_poll:
                 if viewer.is_key_down("space"):
                     ctl.reset()
+                    if follow is not None:
+                        follow.reset()
                 cmd = from_keys({k for k in _KEYS if viewer.is_key_down(k)})
             else:
                 cmd = Command()
             frame = ctl.step(cmd)
             _teleport(sim, actuated_idx, frame, device)
+            if follow is not None:
+                follow.apply(viewer, frame["base_pos"][0, :2].tolist(), float(yaw_from_quat(frame["base_quat"][0])))
 
             d = ctl.debug
             status["text"] = (f"{d.clip_class:9s} {d.clip_name} @ {d.clip_frame}   "
@@ -157,6 +223,8 @@ def main(argv=None) -> int:
     p.add_argument("--seconds", type=float, default=None, help="stop after this many simulated seconds")
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--fps", type=float, default=60.0, help="real-time pacing for the GL viewer")
+    p.add_argument("--free-camera", action="store_true",
+                   help="Newton's fly camera instead of the third-person follow camera (scene.camera.follow=false)")
     return run(p.parse_args(argv))
 
 
