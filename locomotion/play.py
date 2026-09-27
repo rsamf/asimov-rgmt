@@ -1,6 +1,7 @@
 """Kinematic test scene for the motion-matching controller (no physics).
 
-    uv run python -m locomotion.play --corpus /mnt/shared/robotics/asimov/caches/loco
+    uv run python -m locomotion.play                      # corpus from configs/local.yaml
+    uv run python -m locomotion.play --corpus <dir>       # dir holding cache/ and clips.json
     uv run python -m locomotion.play --viewer null --script "w:2,wd:1,q:1" --seconds 4
 
 Keys in the GL window: W/A/S/D translate in the heading frame, Q/E turn,

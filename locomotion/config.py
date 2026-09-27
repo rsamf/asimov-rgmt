@@ -14,6 +14,8 @@ from typing import List, Optional, Sequence
 from omegaconf import OmegaConf
 
 DEFAULT_YAML = Path(__file__).resolve().parent / "configs" / "default.yaml"
+# Machine-specific values (data directories, cache location). Gitignored; see local.example.yaml.
+LOCAL_YAML = Path(__file__).resolve().parent / "configs" / "local.yaml"
 
 
 @dataclass
@@ -63,8 +65,10 @@ class ExcludeEntry:
 
 @dataclass
 class CorpusConfig:
-    # Directory holding cache/ (MotionCorpus cache) and clips.json (see build_corpus.py).
-    cache_dir: str = "/mnt/shared/robotics/asimov/caches/loco"
+    # Machine-specific; set these in configs/local.yaml (gitignored), not here.
+    cache_dir: Optional[str] = None      # directory holding cache/ and clips.json (see build_corpus.py)
+    subset_json: Optional[str] = None    # asimov-gmr curation/locomotion_subset.json
+    search_dirs: List[str] = field(default_factory=list)   # npz directories, searched in order
     mirror: bool = True                  # append left-right mirrored clips at load time
     exclude: List[ExcludeEntry] = field(default_factory=list)
 
@@ -97,10 +101,21 @@ class LocoConfig:
 
 
 def load_config(path: str | None = None, overrides: Sequence[str] = ()) -> LocoConfig:
-    """Dataclass defaults < default.yaml < user yaml (optional) < dotlist overrides."""
+    """Dataclass defaults < default.yaml < local.yaml (if present) < user yaml < dotlist overrides."""
     conf = OmegaConf.merge(OmegaConf.structured(LocoConfig), OmegaConf.load(DEFAULT_YAML))
+    if LOCAL_YAML.exists():
+        conf = OmegaConf.merge(conf, OmegaConf.load(LOCAL_YAML))
     if path is not None:
         conf = OmegaConf.merge(conf, OmegaConf.load(path))
     if overrides:
         conf = OmegaConf.merge(conf, OmegaConf.from_dotlist(list(overrides)))
     return OmegaConf.to_object(conf)
+
+
+def require(value, key: str):
+    """Return a config value or raise a message pointing at local.yaml."""
+    if value is None or value == [] or value == "":
+        raise ValueError(
+            f"config value '{key}' is not set; put it in locomotion/configs/local.yaml "
+            f"(gitignored; see configs/local.example.yaml) or pass --set {key}=...")
+    return value

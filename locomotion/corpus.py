@@ -2,7 +2,8 @@
 
 The frozen selection (asimov-gmr ``curation/locomotion_subset.json``) spans
 two retargeted releases, so every name is resolved against several
-directories in order. ``ClipsMeta`` (``clips.json`` next to the cache) keeps
+directories in order (``corpus.search_dirs``; machine paths live in the
+gitignored ``configs/local.yaml``). ``ClipsMeta`` (``clips.json`` next to the cache) keeps
 each clip's gait class and source plus the nominal speeds measured from the
 corpus at build time.
 """
@@ -20,14 +21,8 @@ from rgmt.data.cache_key import file_sha256
 from rgmt.data.corpus import MotionCorpus
 from rgmt.data.joint_map import KEYPOINT_LINKS
 from rgmt.data.mirror import MIRROR_SUFFIX, mirror_corpus
-from locomotion.config import LocoConfig
+from locomotion.config import LocoConfig, require
 
-LOCO_TRAIN_DIR = Path("/mnt/shared/robotics/asimov/runs/loco/train")
-TUNE_V8_DIR = Path("/mnt/shared/robotics/asimov/motions_train/tune_v8")
-DEFAULT_SEARCH_DIRS = (LOCO_TRAIN_DIR, TUNE_V8_DIR)
-# asimov-gmr is a sibling checkout of this repo.
-DEFAULT_SUBSET_JSON = (Path(__file__).resolve().parents[2] / "asimov-gmr" / "curation"
-                       / "locomotion_subset.json")
 SPEED_KEYS = ("forward", "backward", "lateral", "turn_rate")
 
 
@@ -115,7 +110,7 @@ def measure_speeds(corpus: MotionCorpus, classes: Mapping[str, str],
 
 def load_locomotion_corpus(cfg: LocoConfig, device) -> tuple[MotionCorpus, ClipsMeta]:
     """Open ``<cache_dir>/cache`` and ``<cache_dir>/clips.json``; mirror if configured."""
-    root = Path(cfg.corpus.cache_dir)
+    root = Path(require(cfg.corpus.cache_dir, "corpus.cache_dir"))
     corpus = MotionCorpus.load_cache(
         root / "cache", output_device=device, urdf_hash=file_sha256(ROBOT_URDF),
         physics_fps=cfg.fps, src_fps=cfg.src_fps, keypoint_links=KEYPOINT_LINKS)

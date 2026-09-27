@@ -1,0 +1,8 @@
+# Copy to local.yaml (gitignored) and fill in your machine's paths.
+# load_config() layers local.yaml over default.yaml automatically.
+corpus:
+  cache_dir: /path/to/caches/loco                    # where build_corpus writes cache/ and clips.json
+  subset_json: /path/to/asimov-gmr/curation/locomotion_subset.json
+  search_dirs:                                       # searched in order; first hit wins
+    - /path/to/retargeted/loco/train
+    - /path/to/motions_train/tune_v8

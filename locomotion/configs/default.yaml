@@ -32,7 +32,10 @@ blend:
   halflife: 0.1            # s; inertialization decay after a clip switch
 
 corpus:
-  cache_dir: /mnt/shared/robotics/asimov/caches/loco   # holds cache/ and clips.json
+  # Machine-specific paths live in configs/local.yaml (gitignored; copy local.example.yaml).
+  cache_dir: null          # directory holding cache/ and clips.json (output of build_corpus)
+  subset_json: null        # asimov-gmr curation/locomotion_subset.json (the frozen clip selection)
+  search_dirs: []          # retargeted npz directories, searched in order (recovery run first, then v8)
   mirror: true             # double the corpus with left-right mirrors (symmetric strafes/turns)
   exclude:                 # frozen-subset clips dropped at build time, with the reason
     - name: "ACCAD__MartialArtsWalksTurns_c3d__E9 - side step left"

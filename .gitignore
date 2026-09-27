@@ -13,3 +13,5 @@ build/
 /docs/reports/
 /private/
 /.nebo_archive/
+superpowers/
+locomotion/configs/local.yaml

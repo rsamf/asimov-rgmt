@@ -3,7 +3,10 @@ files, run rgmt.preprocess, measure nominal speeds, write clips.json.
 
     uv run python -m locomotion.build_corpus [--out DIR] [--subset JSON] [--dirs D1 D2] [--force]
 
-Output layout (``--out`` defaults to corpus.cache_dir from the config):
+Paths default to ``corpus.cache_dir`` / ``corpus.subset_json`` / ``corpus.search_dirs``
+from the config (put yours in configs/local.yaml, see local.example.yaml).
+
+Output layout:
     <out>/npz/<name>.npz    symlinks to the resolved sources
     <out>/cache/            MotionCorpus cache (manifest.json + safetensors)
     <out>/clips.json        {clips: {name: {class, source}}, speeds: {...}, meta: {...}}
@@ -24,9 +27,8 @@ from rgmt.data.cache_key import file_sha256
 from rgmt.data.corpus import MotionCorpus
 from rgmt.data.joint_map import KEYPOINT_LINKS
 from rgmt.preprocess import run_preprocess
-from locomotion.config import LocoConfig, load_config
-from locomotion.corpus import (DEFAULT_SEARCH_DIRS, DEFAULT_SUBSET_JSON, ClipsMeta, measure_speeds,
-                               resolve_clips)
+from locomotion.config import LocoConfig, load_config, require
+from locomotion.corpus import ClipsMeta, measure_speeds, resolve_clips
 
 
 def build(out: Path, subset_json: Path, search_dirs: Sequence[Path], cfg: LocoConfig,
@@ -73,17 +75,19 @@ def build(out: Path, subset_json: Path, search_dirs: Sequence[Path], cfg: LocoCo
 
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--out", default=None, help="output dir (default: corpus.cache_dir from the config)")
-    p.add_argument("--subset", default=str(DEFAULT_SUBSET_JSON))
-    p.add_argument("--dirs", nargs="+", default=[str(d) for d in DEFAULT_SEARCH_DIRS],
-                   help="npz directories searched in order")
+    p.add_argument("--out", default=None, help="output dir (default: corpus.cache_dir)")
+    p.add_argument("--subset", default=None, help="locomotion_subset.json (default: corpus.subset_json)")
+    p.add_argument("--dirs", nargs="+", default=None,
+                   help="npz directories searched in order (default: corpus.search_dirs)")
     p.add_argument("--config", default=None)
     p.add_argument("--set", nargs="*", default=[], help="dotlist overrides, e.g. corpus.mirror=false")
     p.add_argument("--force", action="store_true", help="re-bake every clip")
     args = p.parse_args(argv)
     cfg = load_config(args.config, args.set)
-    build(Path(args.out or cfg.corpus.cache_dir), Path(args.subset), [Path(d) for d in args.dirs], cfg,
-          force=args.force)
+    out = Path(args.out or require(cfg.corpus.cache_dir, "corpus.cache_dir"))
+    subset = Path(args.subset or require(cfg.corpus.subset_json, "corpus.subset_json"))
+    dirs = [Path(d) for d in (args.dirs or require(cfg.corpus.search_dirs, "corpus.search_dirs"))]
+    build(out, subset, dirs, cfg, force=args.force)
 
 
 if __name__ == "__main__":
