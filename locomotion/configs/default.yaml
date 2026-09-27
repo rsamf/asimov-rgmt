@@ -1,0 +1,39 @@
+# Every knob of the motion-matching controller. Override with --config my.yaml
+# and/or --set key=value on any locomotion script.
+fps: 60          # controller tick rate; equals the corpus physics_fps
+src_fps: 30      # source clip rate (cache key must match)
+
+speeds:          # null -> median measured from the corpus classes at build time (clips.json)
+  forward: null      # m/s while W is held
+  backward: null     # m/s while S is held
+  lateral: null      # m/s while A or D is held
+  turn_rate: null    # rad/s while Q or E is held
+
+spring:          # critically damped springs that turn key taps into smooth accelerations
+  velocity_halflife: 0.2   # s; larger = softer starts/stops
+  rotation_halflife: 0.1   # s; larger = lazier turn response
+
+features:        # Holden-style matching features
+  horizons: [20, 40, 60]   # frames ahead (0.33 / 0.67 / 1.0 s at 60 fps)
+  root_vel: 1.0            # weight of the root linear velocity block
+  foot_pos: 0.75           # weight of the two foot positions
+  foot_vel: 1.0            # weight of the two foot velocities
+  traj_pos: 1.0            # weight of the future root positions
+  traj_dir: 1.5            # weight of the future facing directions (steering responsiveness)
+
+search:
+  interval: 6              # frames between periodic searches (10 Hz)
+  stay_bias: 0.1           # score bonus for continuing the current clip (avoids flicker)
+  on_command_change: true  # search immediately when the command changes
+
+blend:
+  halflife: 0.1            # s; inertialization decay after a clip switch
+
+corpus:
+  cache_dir: /mnt/shared/robotics/asimov/caches/loco   # holds cache/ and clips.json
+  mirror: true             # double the corpus with left-right mirrors (symmetric strafes/turns)
+  exclude:                 # frozen-subset clips dropped at build time, with the reason
+    - name: "ACCAD__MartialArtsWalksTurns_c3d__E9 - side step left"
+      reason: "martial-arts stance: pelvis faces off the direction of travel (asimov-gmr QA outlier)"
+    - name: "ACCAD__MartialArtsWalksTurns_c3d__E10 - side step right"
+      reason: "martial-arts stance: pelvis faces off the direction of travel (asimov-gmr QA outlier)"

@@ -42,7 +42,7 @@ pythonpath = ["."]
 testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["rgmt"]
+packages = ["rgmt", "locomotion"]
 
 [build-system]
 requires = ["hatchling"]
