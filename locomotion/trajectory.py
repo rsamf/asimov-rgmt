@@ -7,8 +7,12 @@ the same state as many small steps.
 from __future__ import annotations
 
 import math
+from typing import Sequence, Tuple
 
 import torch
+
+from locomotion.config import SpringConfig
+from locomotion.geom import rotate2
 
 LN2 = math.log(2.0)
 
@@ -37,3 +41,54 @@ def spring_velocity_update(x, v, a, v_des, halflife: float, dt: float):
     v_new = eydt * (j0 + j1 * dt) + v_des
     a_new = eydt * (a - j1 * y * dt)
     return x_new, v_new, a_new
+
+
+class TrajectoryModel:
+    """Spring state (planar velocity + yaw rate) and analytic future prediction.
+
+    Position and facing are NOT stored: the caller passes the character's
+    current world facing (and position, for the overlay) so the prediction
+    always starts from the animated root and cannot drift from it.
+    """
+
+    def __init__(self, cfg: SpringConfig, fps: int, horizons: Sequence[int]):
+        self.cfg = cfg
+        self.dt = 1.0 / float(fps)
+        self.horizons = [int(h) for h in horizons]
+        self.reset()
+
+    def reset(self) -> None:
+        self.vel = torch.zeros(2)
+        self.acc = torch.zeros(2)
+        self.yaw_rate = 0.0
+        self.yaw_acc = 0.0
+
+    def step(self, v_des: torch.Tensor, w_des: float) -> None:
+        _, self.vel, self.acc = spring_velocity_update(
+            torch.zeros(2), self.vel, self.acc, v_des.to(torch.float32), self.cfg.velocity_halflife, self.dt)
+        _, self.yaw_rate, self.yaw_acc = spring_velocity_update(
+            0.0, self.yaw_rate, self.yaw_acc, float(w_des), self.cfg.rotation_halflife, self.dt)
+
+    def _predict_deltas(self, v_des: torch.Tensor, w_des: float):
+        dps, dyaws = [], []
+        for h in self.horizons:
+            t = h * self.dt
+            dp, _, _ = spring_velocity_update(torch.zeros(2), self.vel, self.acc,
+                                              v_des.to(torch.float32), self.cfg.velocity_halflife, t)
+            dyaw, _, _ = spring_velocity_update(0.0, self.yaw_rate, self.yaw_acc, float(w_des),
+                                                self.cfg.rotation_halflife, t)
+            dps.append(dp)
+            dyaws.append(float(dyaw))
+        return torch.stack(dps), torch.tensor(dyaws)      # world-frame displacements, relative yaws
+
+    def predict(self, yaw0: float, v_des: torch.Tensor, w_des: float) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Future positions (H,2) and facing directions (H,2) in the heading frame of yaw0."""
+        dp, dyaw = self._predict_deltas(v_des, w_des)
+        pos_h = rotate2(dp, -float(yaw0))
+        dir_h = torch.stack([torch.cos(dyaw), torch.sin(dyaw)], -1)
+        return pos_h, dir_h
+
+    def predict_world(self, xy0: torch.Tensor, yaw0: float, v_des: torch.Tensor, w_des: float):
+        """Future world positions (H,2) and world yaws (H,) for drawing."""
+        dp, dyaw = self._predict_deltas(v_des, w_des)
+        return xy0.to(torch.float32) + dp, float(yaw0) + dyaw
