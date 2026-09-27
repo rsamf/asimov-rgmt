@@ -38,11 +38,15 @@ def build(out: Path, subset_json: Path, search_dirs: Sequence[Path], cfg: LocoCo
     npz_dir.mkdir(parents=True, exist_ok=True)
     wanted = {f"{e.name}.npz" for e in entries}
     for stale in npz_dir.glob("*.npz"):
-        if stale.name not in wanted:
+        if stale.name not in wanted and stale.is_symlink():      # only ever remove our own links
             stale.unlink()
     for e in entries:
         link = npz_dir / f"{e.name}.npz"
-        if link.is_symlink() or link.exists():
+        if link.exists() and not link.is_symlink():
+            raise FileExistsError(
+                f"build_corpus: {link} is a regular file, not a symlink; refusing to overwrite it. "
+                f"Move it away or choose another --out.")
+        if link.is_symlink():
             link.unlink()
         link.symlink_to(e.path.resolve())
 

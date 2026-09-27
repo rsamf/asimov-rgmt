@@ -101,13 +101,15 @@ def test_search_happens_on_command_change_and_never_enters_clip_tail(world):
     assert not ctl.debug.searched                    # interval 6 not reached, command unchanged
     ctl.step(from_keys({"w"}))
     assert ctl.debug.searched
-    end = int(corpus.clip_end[corpus.clip_names.index("walk_fwd")])
+    c = corpus.clip_names.index("walk_fwd")
+    end = int(corpus.clip_end[c])
     ctl.reset(frame=end - 62)                        # two frames before the last searchable one
     seen = []
     for _ in range(20):
         ctl.step(from_keys({"w"}))
         seen.append(ctl.debug.frame)
-    assert max(seen) <= end - 50                     # forced search before the horizon-less tail
+    in_clip = [f for f in seen if int(corpus.frame_clip_id[f]) == c]
+    assert max(in_clip) <= end - 50                  # forced search before the horizon-less tail
 
 
 def test_observed_root_re_anchors(world):
@@ -125,3 +127,42 @@ def test_preview_shape(world):
     ctl.step(Command())
     pv = ctl.preview(10)
     assert pv["joint_q"].shape == (10, 23) and pv["base_pos"].shape == (10, 3)
+
+
+def _frames_of(ctl, script, **reset_kw):
+    ctl.reset(**reset_kw)
+    from locomotion.command import ScriptedSource
+    seen = []
+    for c in ScriptedSource(script, fps=ctl.cfg.fps):
+        ctl.step(c)
+        seen.append(ctl.debug.frame)
+    return seen
+
+
+def _repeats(seen):
+    return sum(1 for a, b in zip(seen[1:], seen[2:]) if a == b)   # skip the reset re-emit tick
+
+
+def test_playback_never_repeats_a_frame(world):
+    _, _, _, ctl = world
+    assert _repeats(_frames_of(ctl, "w:3")) == 0
+    assert _repeats(_frames_of(ctl, "wd:3")) == 0
+    assert _repeats(_frames_of(ctl, "q:1,:1,s:1")) == 0
+
+
+def test_clip_tail_is_left_without_freezing(world):
+    corpus, _, _, ctl = world
+    c = corpus.clip_names.index("walk_fwd")
+    end = int(corpus.clip_end[c])
+    seen = _frames_of(ctl, "w:0.5", frame=end - 62)
+    assert _repeats(seen) == 0
+    in_clip = [f for f in seen if int(corpus.frame_clip_id[f]) == c]
+    assert max(in_clip) <= end - 50                  # never plays into the horizon-less tail
+    assert any(int(corpus.frame_clip_id[f]) != c or f < end - 62 for f in seen)   # it did jump away
+
+
+def test_w_plus_d_covers_nominal_distance(world):
+    _, _, _, ctl = world
+    frames = run_script(ctl, "wd:2")
+    xy, _ = _pose(frames)
+    assert xy[0] > 0.5 and xy[1] < -0.5          # ~0.99 m/s diagonal minus the 0.5 s ramp

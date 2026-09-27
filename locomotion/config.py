@@ -46,6 +46,8 @@ class SearchConfig:
     interval: int = 6                    # frames between searches (6 = 10 Hz)
     stay_bias: float = 0.1               # normalised-feature units subtracted from the continuing frame
     on_command_change: bool = True       # also search the tick the command changes
+    jump_margin: int = 20                # a jump target must keep this many frames beyond the horizon
+    exclude_window: int = 20             # frames around the current one (same clip) never jumped to
 
 
 @dataclass

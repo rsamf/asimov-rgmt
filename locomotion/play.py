@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import sys
 import time
 
 import numpy as np
@@ -45,26 +46,35 @@ def _teleport(sim: NewtonSim, actuated_idx: torch.Tensor, frame: dict, device) -
                   frame["base_lin_vel"].to(device), frame["base_ang_vel"].to(device), hinge_q, hinge_qd)
 
 
-def _draw_overlay(viewer, ctl) -> None:
-    if not hasattr(viewer, "log_lines"):
-        return
-    try:
-        import warp as wp
-        d = ctl.debug
-        root = ctl.player.world_xy.detach().cpu().numpy()
-        pts = d.traj_xy.detach().cpu().numpy()
-        yaws = d.traj_yaw.detach().cpu().numpy()
-        starts, ends = [], []
-        prev = root
-        for p, y in zip(pts, yaws):
-            starts.append((prev[0], prev[1], 0.02)); ends.append((p[0], p[1], 0.02)); prev = p
-            starts.append((p[0], p[1], 0.02))
-            ends.append((p[0] + 0.15 * math.cos(y), p[1] + 0.15 * math.sin(y), 0.02))
-        s = wp.array(np.array(starts, np.float32), dtype=wp.vec3)
-        e = wp.array(np.array(ends, np.float32), dtype=wp.vec3)
-        viewer.log_lines("loco/trajectory", s, e, (1.0, 0.6, 0.1), width=0.01)
-    except Exception:
-        pass
+class TrajectoryOverlay:
+    """Draws the predicted trajectory (root -> horizon points, plus a facing tick
+    at each) with ``viewer.log_lines``. A failure is reported once on stderr and
+    the overlay switches itself off instead of failing silently every frame."""
+
+    def __init__(self) -> None:
+        self.enabled = True
+
+    def draw(self, viewer, ctl) -> None:
+        if not self.enabled or not hasattr(viewer, "log_lines"):
+            return
+        try:
+            import warp as wp
+            d = ctl.debug
+            root = ctl.player.world_xy.detach().cpu().numpy()
+            pts = d.traj_xy.detach().cpu().numpy()
+            yaws = d.traj_yaw.detach().cpu().numpy()
+            starts, ends = [], []
+            prev = root
+            for p, y in zip(pts, yaws):
+                starts.append((prev[0], prev[1], 0.02)); ends.append((p[0], p[1], 0.02)); prev = p
+                starts.append((p[0], p[1], 0.02))
+                ends.append((p[0] + 0.15 * math.cos(y), p[1] + 0.15 * math.sin(y), 0.02))
+            s = wp.array(np.array(starts, np.float32), dtype=wp.vec3)
+            e = wp.array(np.array(ends, np.float32), dtype=wp.vec3)
+            viewer.log_lines("loco/trajectory", s, e, (1.0, 0.6, 0.1), width=0.01)
+        except Exception as exc:  # noqa: BLE001 - report once, keep the scene running
+            self.enabled = False
+            print(f"trajectory overlay disabled: {type(exc).__name__}: {exc}", file=sys.stderr)
 
 
 def run(args) -> int:
@@ -87,6 +97,7 @@ def run(args) -> int:
             viewer.register_ui_callback(lambda imgui: imgui.text(status["text"]), position="stats")
         except Exception:
             pass
+    overlay = TrajectoryOverlay()
     script = ScriptedSource(args.script, fps=cfg.fps) if args.script else None
     can_poll = hasattr(viewer, "is_key_down") and args.viewer == "gl" and not args.headless
 
@@ -118,7 +129,7 @@ def run(args) -> int:
 
             viewer.begin_frame(t_sim)
             viewer.log_state(sim.state_0)
-            _draw_overlay(viewer, ctl)
+            overlay.draw(viewer, ctl)
             viewer.end_frame()
             t_sim += 1.0 / cfg.fps
             step += 1

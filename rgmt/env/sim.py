@@ -249,11 +249,20 @@ class NewtonSim:
         # newton 1.6 defaults Control.joint_target_q to the COORD layout
         # (nq entries per env). This class writes PD targets at DOF indices
         # with an nqd stride (see step / _ctrl_target_flat and the guard
-        # below), so pin the legacy DOF layout; Model snapshots the flag at
-        # finalize time.
-        if hasattr(newton, "use_coord_layout_targets"):
+        # below), so pin the legacy DOF layout for THIS model only: Model
+        # snapshots the module flag at finalize time, so set it around the
+        # call and restore it (other Newton models in the process keep the
+        # default). newton 1.6 emits a DeprecationWarning per finalize for
+        # freejoint models under the legacy layout; the eventual migration is
+        # to index targets with Model.joint_target_q_start.
+        _prev_layout = getattr(newton, "use_coord_layout_targets", None)
+        if _prev_layout is not None:
             newton.use_coord_layout_targets = False
-        self.model = builder.finalize()
+        try:
+            self.model = builder.finalize()
+        finally:
+            if _prev_layout is not None:
+                newton.use_coord_layout_targets = _prev_layout
 
         # newton 1.5 rewrote replicate() as a single-pass merge. Everything
         # downstream (per-env DoF/body slicing, keypoint resolution, DR index

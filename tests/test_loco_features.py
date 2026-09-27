@@ -96,3 +96,20 @@ def test_build_raises_when_no_frame_has_future():
     with pytest.raises(ValueError) as ei:
         FeatureDB.build(corpus, FeaturesConfig(), device="cpu")
     assert "60" in str(ei.value)
+
+
+def test_query_excludes_neighbourhood_and_tail_but_allows_continuing_frame():
+    corpus, db = _db()
+    end0 = int(corpus.clip_end[0])
+    i = int(corpus.clip_start[0]) + 100
+    # the current frame and its neighbours in the same clip are never jump targets
+    j = db.query(db.raw[i, :15], db.raw[i, 15:], current_frame=i, exclude_window=20)
+    assert not (int(corpus.frame_clip_id[j]) == 0 and abs(j - i) <= 20)
+    # frames without a playable margin beyond the horizon are not jump targets ...
+    t = end0 - 60                                 # feature-valid, zero margin
+    j2 = db.query(db.raw[t, :15], db.raw[t, 15:], current_frame=t - 30, jump_margin=20, exclude_window=0)
+    assert j2 != t and db.is_valid(j2)
+    # ... unless it is the frame playback would reach anyway (continuing frame wins on a tie)
+    j3 = db.query(db.raw[t, :15], db.raw[t, 15:], current_frame=t - 1, current_next=t,
+                  stay_bias=0.1, jump_margin=20, exclude_window=20)
+    assert j3 == t

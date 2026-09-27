@@ -47,3 +47,20 @@ def test_build_end_to_end(tmp_path):
     main(["--out", str(out), "--subset", str(sub), "--dirs", str(d1), str(d2),
           "--set", "corpus.exclude=[{name: excluded, reason: test}]"])
     assert not (out / "npz" / "stale.npz").exists()
+
+
+def test_build_never_deletes_regular_files(tmp_path):
+    d1 = tmp_path / "loco"; d1.mkdir()
+    _walk_npz(d1 / "fwd.npz", 1.0)
+    sub = tmp_path / "subset.json"
+    sub.write_text(json.dumps({"rules_version": "t", "clips": {"walk_fwd": ["fwd"]}}))
+    out = tmp_path / "out"; (out / "npz").mkdir(parents=True)
+    _walk_npz(out / "npz" / "keep.npz", 0.4)                 # an unrelated real file in the link dir
+    build(out, sub, [d1], load_config(overrides=["corpus.exclude=[]"]))
+    assert (out / "npz" / "keep.npz").exists() and not (out / "npz" / "keep.npz").is_symlink()
+    (out / "npz" / "fwd.npz").unlink()                       # replace our link with a real file
+    _walk_npz(out / "npz" / "fwd.npz", 0.4)
+    import pytest
+    with pytest.raises(FileExistsError):
+        build(out, sub, [d1], load_config(overrides=["corpus.exclude=[]"]))
+    assert (out / "npz" / "fwd.npz").exists() and not (out / "npz" / "fwd.npz").is_symlink()

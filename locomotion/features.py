@@ -23,7 +23,8 @@ POSE_DIM = 15
 
 class FeatureDB:
     def __init__(self, *, horizons: List[int], raw: torch.Tensor, valid_idx: torch.Tensor,
-                 mean: torch.Tensor, scale: torch.Tensor, weight: torch.Tensor):
+                 mean: torch.Tensor, scale: torch.Tensor, weight: torch.Tensor,
+                 clip_id: torch.Tensor, room: torch.Tensor):
         self.horizons = list(horizons)
         self.raw = raw
         self.valid_idx = valid_idx
@@ -34,6 +35,9 @@ class FeatureDB:
         self._valid_pos = torch.full((self.n_frames,), -1, dtype=torch.long, device=self.device)
         self._valid_pos[valid_idx] = torch.arange(valid_idx.numel(), device=self.device)
         self.feats = self.normalize(raw[valid_idx])
+        self._clip_id = clip_id                       # (N,) clip of every frame
+        self._room_valid = room[valid_idx]            # (M,) frames left in the clip after each valid frame
+        self._clip_valid = clip_id[valid_idx]         # (M,)
 
     # ---- construction ------------------------------------------------------
     @classmethod
@@ -63,7 +67,8 @@ class FeatureDB:
         lfv, rfv = heading3(kp_vel[:, li]), heading3(kp_vel[:, ri])
 
         idx = torch.arange(N, device=dev)
-        end = corpus.clip_end.to(dev)[corpus.frame_clip_id.to(dev)]
+        clip_id = corpus.frame_clip_id.to(dev)
+        end = corpus.clip_end.to(dev)[clip_id]
         valid = idx + hmax <= end
         if not bool(valid.any()):
             raise ValueError(
@@ -88,7 +93,8 @@ class FeatureDB:
         for a, b, w in blocks:
             scale[a:b] = std[a:b].mean().clamp_min(1e-3)          # one scale per block
             weight[a:b] = float(w)
-        return cls(horizons=H, raw=raw, valid_idx=idx[valid], mean=mean, scale=scale, weight=weight)
+        return cls(horizons=H, raw=raw, valid_idx=idx[valid], mean=mean, scale=scale, weight=weight,
+                   clip_id=clip_id, room=end - idx)
 
     # ---- queries ------------------------------------------------------------
     def is_valid(self, i: int) -> bool:
@@ -106,9 +112,33 @@ class FeatureDB:
         return torch.cat([traj_pos.reshape(-1), traj_dir.reshape(-1)])
 
     def query(self, pose_raw: torch.Tensor, traj_raw: torch.Tensor,
-              current_next: Optional[int] = None, stay_bias: float = 0.0) -> int:
+              current_frame: Optional[int] = None, current_next: Optional[int] = None,
+              stay_bias: float = 0.0, jump_margin: int = 0, exclude_window: int = 0) -> int:
+        """Nearest valid frame to (pose, trajectory), Holden-style:
+
+        * a JUMP target must leave ``jump_margin`` playable frames beyond the
+          horizon so playback does not immediately run out of clip;
+        * frames within ``exclude_window`` of ``current_frame`` in the same
+          clip are never jump targets (jumping to "now" would stall playback);
+        * ``current_next`` (the frame playback reaches on its own) is exempt
+          from both rules and gets ``stay_bias`` subtracted, so continuing
+          wins ties and small losses.
+        """
         q = self.normalize(torch.cat([pose_raw.to(self.device), traj_raw.to(self.device)]))
         d = ((self.feats - q) ** 2).sum(-1)
+        blocked = self._room_valid < max(self.horizons) + int(jump_margin)
+        if current_frame is not None and 0 <= current_frame < self.n_frames and exclude_window > 0:
+            same = self._clip_valid == self._clip_id[current_frame]
+            near = (self.valid_idx - int(current_frame)).abs() <= int(exclude_window)
+            blocked = blocked | (same & near)
+        cont = None
         if current_next is not None and self.is_valid(current_next):
-            d[self._valid_pos[current_next]] -= float(stay_bias)
-        return int(self.valid_idx[int(d.argmin())])
+            cont = int(self._valid_pos[current_next])
+            d_cont = float(d[cont]) - float(stay_bias)
+        d = torch.where(blocked, torch.full_like(d, float("inf")), d)
+        if cont is not None:
+            d[cont] = d_cont
+        k = int(d.argmin())
+        if not torch.isfinite(d[k]):                  # nothing jumpable (tiny corpus): best valid frame
+            k = int(((self.feats - q) ** 2).sum(-1).argmin())
+        return int(self.valid_idx[k])

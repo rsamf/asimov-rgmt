@@ -95,7 +95,9 @@ class MotionMatchingController:
             pose = self.db.pose_features(self.player.frame)
             tp, td = self.traj.predict(yaw0, v_des, w_des)
             j = self.db.query(pose, FeatureDB.traj_raw(tp, td),
-                              current_next=self.player.next_frame, stay_bias=s.stay_bias)
+                              current_frame=self.player.frame, current_next=self.player.next_frame,
+                              stay_bias=s.stay_bias, jump_margin=s.jump_margin,
+                              exclude_window=s.exclude_window)
             if j != self.player.next_frame:
                 self.player.switch(j)
             self._since_search = 0

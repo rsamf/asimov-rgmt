@@ -25,6 +25,8 @@ search:
   interval: 6              # frames between periodic searches (10 Hz)
   stay_bias: 0.1           # score bonus for continuing the current clip (avoids flicker)
   on_command_change: true  # search immediately when the command changes
+  jump_margin: 20          # frames a jump target must keep beyond the horizon (no landing on a clip tail)
+  exclude_window: 20       # frames around the current one in the same clip that are never jump targets
 
 blend:
   halflife: 0.1            # s; inertialization decay after a clip switch
