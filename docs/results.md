@@ -71,3 +71,16 @@ uv run python scripts/eval_success_gated.py runs/rgmt_medium/best_test.pt \
 ```
 
 Training numbers were produced on a single RTX 5090; the full 34,000-iteration run takes roughly two days at 8,192 environments. The in-loop robust evaluation runs every 600 iterations on the held-out test split and drives both checkpoint selection (`best_test.pt`) and the failure-mining weights.
+
+## Plant v2 (current tree): PD floors before run n24
+
+The asimov-1 description changed in October 2026 (welded neck, new feet, torque caps 2.4 to 3.6x lower). The reference release was re-retargeted against it (tune_v9): per-joint joint-limit saturation is identical to tune_v8 to 0.01% and root height moves by 1 mm, so the data is the same motion on the new plant. Pure-PD start-to-end success (zero residual, no noise), chosen as the floor the next policy has to beat:
+
+| plant | gains | caps | train split (2389) | test split (180) |
+|---|---|---|---|---|
+| plant-v1 (tag, tune_v8) | leg-weighted 150 to 200 | none | 0.2 % | 0.6 % |
+| plant v2 (tune_v9) | leg-weighted | URDF | 1.4 % | 1.7 % |
+| plant v2 | `caps:0.15` (kp = cap / 0.15 rad) | URDF | 3.6 % | 3.3 % |
+| plant v2 | `caps:0.10` | URDF | 4.2 % | 4.4 % |
+
+Stiffer gains track better under PD, but `caps:0.10` saturates its worst joint 7.4 % of steps at 0.8x caps (4.6 % at 0.9x) and clips the residual beyond 0.10 rad, so the plant v2 recipe uses `caps:0.15` (2.3 % nominal, 3.1 % at 0.9x) with the torque-cap randomization narrowed to [0.9, 1.2]. The full sweep is reproduced by `scripts/eval_success_gated.py pd ... --gains caps:<e> --effort urdf[:scale] --torque`.

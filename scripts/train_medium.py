@@ -29,7 +29,7 @@ SPLIT = os.path.join(REPO, "rgmt", "data", "splits", "medium.json")
 def build_cfg(cache: str, log_dir: str, smoke: bool, device: str, seed: int,
               mirror: bool = False, gains: str = "leg_weighted",
               body_frame_ang_vel: bool = False, exp_name: str | None = None,
-              split_json: str | None = None):
+              split_json: str | None = None, effort_dr: tuple[float, float] = (0.8, 1.2)):
     kp, kd = gains_profile(gains)
     exp_name = exp_name or "rgmt_medium"
     return OmegaConf.create(dict(
@@ -76,7 +76,7 @@ def build_cfg(cache: str, log_dir: str, smoke: bool, device: str, seed: int,
                 mass_scale_range=[0.9, 1.1],
                 kp_scale_range=[0.9, 1.1],
                 kd_scale_range=[0.9, 1.1],
-                effort_scale_range=[0.8, 1.2],
+                effort_scale_range=list(effort_dr),
                 privileged=True,
             ),
         ),
@@ -159,6 +159,8 @@ if __name__ == "__main__":
     ap.add_argument("--body-frame-ang-vel", action="store_true",
                     help="observe pelvis angular velocity in the body frame (plant v2 recipe)")
     ap.add_argument("--exp-name", default=None, help="experiment name (default rgmt_medium)")
+    ap.add_argument("--effort-dr", nargs=2, type=float, default=[0.8, 1.2], metavar=("LO", "HI"),
+                    help="torque-cap DR scale range (plant v2 recipe: 0.9 1.2, from the PD sweep)")
     ap.add_argument("--split", default=None,
                     help="train/test split json (default rgmt/data/splits/medium.json)")
     args = ap.parse_args()
@@ -167,5 +169,6 @@ if __name__ == "__main__":
     stats = run_training(build_cfg(args.cache, args.log_dir, args.smoke,
                                    args.device, args.seed, mirror=args.mirror,
                                    gains=args.gains, body_frame_ang_vel=args.body_frame_ang_vel,
-                                   exp_name=args.exp_name, split_json=args.split))
+                                   exp_name=args.exp_name, split_json=args.split,
+                                   effort_dr=tuple(args.effort_dr)))
     print("TRAINING COMPLETE. final stats:", stats)
