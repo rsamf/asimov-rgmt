@@ -113,6 +113,7 @@ def load_policy(ckpt_path: str) -> dict:
         "model": model,
         "dims": dims,
         "saved_env": saved_env,
+        "ck": ck,
         "iteration": iteration,
         "path": ckpt_path,
         "motion_cache": motion_cache,
@@ -132,22 +133,13 @@ def load_corpus(cache_dir: str) -> MotionCorpus:
 @nb.fn(ui={"default_tab": "info"})
 def build_env(corpus: MotionCorpus, policy: dict) -> TrackEnv:
     """Single-env TrackEnv with every termination disabled (see module docstring)."""
-    saved = policy["saved_env"]
-    dims = policy["dims"]
-    drift_obs = bool(saved.get("drift_obs", False)) or dims.cmd_dim > 55
-    drift_obs_proprio = bool(saved.get("drift_obs_proprio", False)) or dims.obs_dim > 98
+    from rgmt.eval_gated import plant_from_ckpt
     cfg = EnvConfig(
         num_envs=1, keypoint_links=KEYPOINT_LINKS, episode_len=10**9,
         noise_level=0.0, recovery_fraction=0.0,
-        kp=saved.get("kp", 100.0), kd=saved.get("kd", 5.0),
-        action_scale=float(saved.get("action_scale", 0.5)),
-        action_filter_alpha=float(saved.get("action_filter_alpha", 1.0)),
-        effort_limits=saved.get("effort_limits", None),
-        dt=float(saved.get("dt", 1.0 / 60.0)),
-        control_decimation=int(saved.get("control_decimation", 1)),
         root_err_done=1e9, z_dev_done=1e9, joint_err_done=1e9,
         z_fall=-1.0, up_dot_min=-2.0, head_z_min=-10.0,
-        drift_obs=drift_obs, drift_obs_proprio=drift_obs_proprio)
+        **plant_from_ckpt(policy["ck"]))
     env = TrackEnv(cfg, corpus, device=DEV, train=False)
     nb.log_text("env", "terminations disabled; drift_obs=%s drift_obs_proprio=%s"
                 % (drift_obs, drift_obs_proprio))

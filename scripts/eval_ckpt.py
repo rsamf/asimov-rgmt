@@ -38,25 +38,16 @@ def main(ckpt_path, n_envs=256, steps=400, cache=DEFAULT_CACHE):
 
     # Ckpts trained with drift-feedback obs (cmd_dim 60 / obs_dim 103) need the
     # env must be built to match or the widths silently mismatch the network.
-    saved_env = (ck.get("config") or {}).get("env") or {}
-    drift_obs = bool(saved_env.get("drift_obs", False)) or dims.cmd_dim > 55
-    drift_obs_proprio = bool(saved_env.get("drift_obs_proprio", False)) or dims.obs_dim > 98
-
     # eval plant MUST match the trained plant (per-joint gains, action_scale,
-    # filter, torque caps) — read them from the checkpoint's stored config.
+    # filter, torque caps, obs semantics) — all read from the checkpoint.
+    from rgmt.eval_gated import plant_from_ckpt
     cfg = EnvConfig(
         num_envs=n_envs,
-        control_decimation=int(saved_env.get("control_decimation", 1)),
-        dt=float(saved_env.get("dt", 1.0 / 60.0)),
-        kp=saved_env.get("kp", 100.0), kd=saved_env.get("kd", 5.0),
-        action_scale=float(saved_env.get("action_scale", 0.5)),
-        action_filter_alpha=float(saved_env.get("action_filter_alpha", 1.0)),
-        effort_limits=saved_env.get("effort_limits", None),
         foot_friction=0.75, K=9, L=10, episode_len=100000,
         z_fall=0.12, up_dot_min=0.0, head_z_min=0.3, joint_err_done=100.0,
         root_err_done=1.0, noise_level=0.0,  # NO command noise
         keypoint_links=KEYPOINT_LINKS, recovery_fraction=0.0,  # NO recovery envs
-        drift_obs=drift_obs, drift_obs_proprio=drift_obs_proprio)
+        **plant_from_ckpt(ck))
     env = TrackEnv(cfg, corpus, device=dev, train=False)  # train=False -> no noise
 
     bundle = env.reset_all()

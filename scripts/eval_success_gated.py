@@ -9,7 +9,7 @@ success rate and tracking metrics computed ONLY over steps of successful
 episodes (paper-style MPJPE-on-survivors), so precision and survival stop
 being conflated.
 
-Usage: python scripts/eval_success_gated.py <ckpt.pt|pd> [n_envs] [--limit N]
+Usage: python scripts/eval_success_gated.py <ckpt.pt|pd> [n_envs] [--limit N] [--gains P --effort none|urdf --torque]
            [--cache DIR] [--dump-clips out.json]
            [--action-noise SIGMA] [--repeats K]
            [--split split.json --role test|train]
@@ -31,7 +31,7 @@ from rgmt.data.corpus import MotionCorpus
 from rgmt.data.cache_key import file_sha256
 from rgmt.data.joint_map import KEYPOINT_LINKS
 from rgmt.assets.paths import ROBOT_URDF
-from rgmt.eval_gated import build_eval_env, run_gated_eval, load_split, split_clip_ids
+from rgmt.eval_gated import build_eval_env, run_gated_eval, load_split, split_clip_ids, plant_from_ckpt
 
 CACHE = "cache/"
 dev = "cuda:0"
@@ -75,27 +75,21 @@ if ckpt_path != "pd":
         critic_hidden=tuple(net_cfg.get("critic_hidden", [512, 256]))).to(dev)
     model.load_state_dict(ck["model"])
     model.eval()
-    saved_env = (ck.get("config") or {}).get("env") or {}
-    drift_obs = bool(saved_env.get("drift_obs", False)) or dims.cmd_dim > 55
-    drift_obs_proprio = (bool(saved_env.get("drift_obs_proprio", False))
-                         or dims.obs_dim > 98)
-    # eval plant MUST match the trained plant (per-joint gains / action_scale)
-    eval_kp = saved_env.get("kp", 100.0)
-    eval_kd = saved_env.get("kd", 5.0)
-    eval_action_scale = float(saved_env.get("action_scale", 0.5))
-    eval_filter_alpha = float(saved_env.get("action_filter_alpha", 1.0))
-    eval_effort = saved_env.get("effort_limits", None)
+    # eval plant MUST match the trained plant: everything comes from the checkpoint.
+    plant = plant_from_ckpt(ck)
 else:
-    eval_kp, eval_kd, eval_action_scale, eval_filter_alpha = 100.0, 5.0, 0.5, 1.0
-    eval_effort = None
+    # Pure-PD floor. --gains <profile> and --effort none|urdf choose the plant
+    # (defaults: the plant-v1 recipe's leg-weighted gains, uncapped).
+    from rgmt.env.gains import gains_profile, urdf_effort_limits
+    _prof = sys.argv[sys.argv.index("--gains") + 1] if "--gains" in sys.argv else "leg_weighted"
+    _eff = sys.argv[sys.argv.index("--effort") + 1] if "--effort" in sys.argv else "none"
+    _kp, _kd = gains_profile(_prof)
+    plant = dict(kp=_kp, kd=_kd, action_scale=0.3, action_filter_alpha=1.0,
+                 effort_limits=urdf_effort_limits() if _eff == "urdf" else None)
+    print(f"PD plant: gains={_prof} effort={_eff}")
+torque_report = "--torque" in sys.argv
 
-env = build_eval_env(corpus, dev, n_envs,
-                     drift_obs=drift_obs, drift_obs_proprio=drift_obs_proprio,
-                     kp=eval_kp, kd=eval_kd, action_scale=eval_action_scale,
-                     action_filter_alpha=eval_filter_alpha,
-                     effort_limits=eval_effort,
-                     dt=float(saved_env.get("dt", 1.0 / 60.0)) if ckpt_path != "pd" else 1.0 / 60.0,
-                     control_decimation=int(saved_env.get("control_decimation", 1)) if ckpt_path != "pd" else 1)
+env = build_eval_env(corpus, dev, n_envs, **plant)
 
 if split_path is not None:
     clip_ids = split_clip_ids(corpus, load_split(split_path), role)
@@ -106,7 +100,7 @@ else:
     tag = f"{n_clips} clips"
 
 r = run_gated_eval(model, env, clip_ids, action_noise=action_noise,
-                   repeats=repeats, seed=0, per_clip=dump_path is not None)
+                   repeats=repeats, seed=0, per_clip=dump_path is not None, report_torque=torque_report)
 
 print(f"=== success-gated eval: {ckpt_path} ({tag}) ===")
 print(f"  success rate:            {r['success']}/{r['total']} = {r['rate']*100:.1f} %")
@@ -120,6 +114,13 @@ if repeats > 1:
 print(f"  MPKPE on survivors:      {r['mpkpe_mm']:6.1f} mm")
 print(f"  pose (root frame), surv: {r['pose_mm']:6.1f} mm")
 print(f"  jitter (cmd), surv:      {r['jitter_mrad']:6.1f} mrad/step")
+if r.get("torque"):
+    rows = sorted(r["torque"].items(), key=lambda kv: -kv[1]["sat_frac"])
+    print("  torque demand vs cap (counted steps): joint  sat_frac  mean|tau|/cap")
+    for name, v in rows[:8]:
+        print(f"    {name.replace('_joint',''):22s} {v['sat_frac']*100:6.2f} %   {v['mean_ratio']:.3f}")
+    worst = max(v["sat_frac"] for v in r["torque"].values())
+    print(f"  worst-joint saturation: {worst*100:.2f} %")
 
 # Greedy (zero-noise) reference, the deployment-honest number. Pre-tanh
 # eval noise can act as beneficial dither (measured ~+3 pts on a policy

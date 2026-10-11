@@ -20,17 +20,20 @@ import os
 from omegaconf import OmegaConf
 
 from rgmt.train import run_training
-from rgmt.env.gains import leg_weighted_gains
+from rgmt.env.gains import gains_profile
 
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SPLIT = os.path.join(REPO, "rgmt", "data", "splits", "medium.json")
 
 
 def build_cfg(cache: str, log_dir: str, smoke: bool, device: str, seed: int,
-              mirror: bool = False):
-    kp, kd = leg_weighted_gains()
+              mirror: bool = False, gains: str = "leg_weighted",
+              body_frame_ang_vel: bool = False, exp_name: str | None = None,
+              split_json: str | None = None):
+    kp, kd = gains_profile(gains)
+    exp_name = exp_name or "rgmt_medium"
     return OmegaConf.create(dict(
-        experiment_name="rgmt_medium_smoke" if smoke else "rgmt_medium",
+        experiment_name=f"{exp_name}_smoke" if smoke else exp_name,
         seed=seed,
         device=device,
         log_dir=log_dir,
@@ -60,6 +63,9 @@ def build_cfg(cache: str, log_dir: str, smoke: bool, device: str, seed: int,
             keypoint_links=None,
             recovery_fraction=0.0,
             drift_obs=True,
+            # Plant v2 recipe: omega in the pelvis frame, like the command
+            # window and a real IMU (plant v1 checkpoints used world frame).
+            body_frame_ang_vel=body_frame_ang_vel,
             action_filter_alpha=0.7,
             # Sim2real plant: per-joint datasheet torque caps from the URDF,
             # plus episode-consistent domain randomization with a privileged
@@ -148,9 +154,18 @@ if __name__ == "__main__":
                     help="12-iteration pipeline smoke run at 256 envs")
     ap.add_argument("--mirror", action="store_true",
                     help="left-right mirror augmentation (2x train clips); off in the released recipe")
+    ap.add_argument("--gains", default="leg_weighted",
+                    help="PD gain profile: leg_weighted (plant v1 recipe) | caps_v2 | caps:<e_sat> (plant v2)")
+    ap.add_argument("--body-frame-ang-vel", action="store_true",
+                    help="observe pelvis angular velocity in the body frame (plant v2 recipe)")
+    ap.add_argument("--exp-name", default=None, help="experiment name (default rgmt_medium)")
+    ap.add_argument("--split", default=None,
+                    help="train/test split json (default rgmt/data/splits/medium.json)")
     args = ap.parse_args()
     if args.smoke:
         os.environ.setdefault("NEBO_NO_STORE", "1")
     stats = run_training(build_cfg(args.cache, args.log_dir, args.smoke,
-                                   args.device, args.seed, mirror=args.mirror))
+                                   args.device, args.seed, mirror=args.mirror,
+                                   gains=args.gains, body_frame_ang_vel=args.body_frame_ang_vel,
+                                   exp_name=args.exp_name, split_json=args.split))
     print("TRAINING COMPLETE. final stats:", stats)

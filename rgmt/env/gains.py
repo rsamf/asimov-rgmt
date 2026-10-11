@@ -88,3 +88,32 @@ if __name__ == "__main__":
     eff = urdf_effort_limits()
     for n, a, b, e in zip(ASIMOV_ACTUATED_JOINT_NAMES, kp, kd, eff):
         print(f"  {n:26} kp={a:5.0f}  kd={b:5.1f}  effort={e:5.0f}")
+
+
+def caps_scaled_gains(e_sat: float = 0.25) -> tuple[list[float], list[float]]:
+    """(kp, kd) sized to the URDF torque caps: ``kp_j = cap_j / e_sat``.
+
+    With plant v2's caps (knee 45, ankle roll 17, elbow 12 Nm) the
+    leg-weighted profile saturates at 0.1 to 0.25 rad of error. This profile
+    puts the saturation point at ``e_sat`` rad for every joint and keeps the
+    leg-weighted profile's per-joint damping ratio kd/kp. ``e_sat`` is the
+    one knob the PD-floor sweep (scripts/eval_success_gated.py pd
+    --gains caps:<e_sat>) varies.
+    """
+    kp_lw, kd_lw = leg_weighted_gains()
+    caps = urdf_effort_limits()
+    kp = [c / float(e_sat) for c in caps]
+    kd = [k * (d / p) for k, p, d in zip(kp, kp_lw, kd_lw)]
+    return kp, kd
+
+
+def gains_profile(name: str) -> tuple[list[float], list[float]]:
+    """Resolve a gains profile by name: ``leg_weighted`` (plant v1 recipe),
+    ``caps_v2`` (= ``caps:0.25``), or ``caps:<e_sat>``."""
+    if name == "leg_weighted":
+        return leg_weighted_gains()
+    if name == "caps_v2":
+        return caps_scaled_gains(0.25)
+    if name.startswith("caps:"):
+        return caps_scaled_gains(float(name.split(":", 1)[1]))
+    raise ValueError(f"unknown gains profile {name!r} (leg_weighted | caps_v2 | caps:<e_sat>)")

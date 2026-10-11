@@ -41,9 +41,8 @@ model = RGMTActorCritic(dims,
     critic_hidden=tuple(net_cfg.get("critic_hidden", [512, 256]))).to(DEV)
 model.load_state_dict(ck["model"])
 model.eval()
-saved_env = (ck.get("config") or {}).get("env") or {}
-drift_obs = bool(saved_env.get("drift_obs", False)) or dims.cmd_dim > 55
-drift_obs_proprio = bool(saved_env.get("drift_obs_proprio", False)) or dims.obs_dim > 98
+from rgmt.eval_gated import plant_from_ckpt
+plant = plant_from_ckpt(ck)   # gains, residual scale/filter, torque caps, obs semantics
 
 corpus = MotionCorpus.load_cache(
     CACHE, output_device=DEV, urdf_hash=file_sha256(ROBOT_URDF),
@@ -55,15 +54,9 @@ corpus = MotionCorpus.load_cache(
 # plant + action semantics must match training (per-joint gains / action_scale)
 cfg = EnvConfig(num_envs=1, keypoint_links=KEYPOINT_LINKS, episode_len=10**9,
                 noise_level=0.0, recovery_fraction=0.0,
-                kp=saved_env.get("kp", 100.0), kd=saved_env.get("kd", 5.0),
-                action_scale=float(saved_env.get("action_scale", 0.5)),
-                action_filter_alpha=float(saved_env.get("action_filter_alpha", 1.0)),
-                effort_limits=saved_env.get("effort_limits", None),
-                dt=float(saved_env.get("dt", 1.0 / 60.0)),
-                control_decimation=int(saved_env.get("control_decimation", 1)),
                 root_err_done=1e9, z_dev_done=1e9, joint_err_done=1e9,
                 z_fall=-1.0, up_dot_min=-2.0, head_z_min=-10.0,
-                drift_obs=drift_obs, drift_obs_proprio=drift_obs_proprio)
+                **plant)
 env = TrackEnv(cfg, corpus, device=DEV, train=False)
 
 ci = corpus.clip_names.index(CLIP)

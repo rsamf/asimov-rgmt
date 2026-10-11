@@ -45,17 +45,8 @@ def main() -> None:
         critic_hidden=tuple(net_cfg.get("critic_hidden", [512, 256]))).to(dev)
     model.load_state_dict(ck["model"])
     model.eval()
-    senv = (ck.get("config") or {}).get("env") or {}
-    env = build_eval_env(
-        corpus, dev, a.n_envs,
-        drift_obs=bool(senv.get("drift_obs", False)) or dims.cmd_dim > 55,
-        drift_obs_proprio=bool(senv.get("drift_obs_proprio", False)) or dims.obs_dim > 98,
-        kp=senv.get("kp", 100.0), kd=senv.get("kd", 5.0),
-        action_scale=float(senv.get("action_scale", 0.5)),
-        action_filter_alpha=float(senv.get("action_filter_alpha", 1.0)),
-        effort_limits=senv.get("effort_limits", None),
-        dt=float(senv.get("dt", 1.0 / 60.0)),
-        control_decimation=int(senv.get("control_decimation", 1)))
+    from rgmt.eval_gated import plant_from_ckpt
+    env = build_eval_env(corpus, dev, a.n_envs, **plant_from_ckpt(ck))
 
     if a.split:
         ids = split_clip_ids(corpus, load_split(a.split), "test")[: a.n_clips]

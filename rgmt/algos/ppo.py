@@ -408,13 +408,29 @@ class PPOTrainer:
             if early_stop:
                 break
 
+        # approx_kl above is evaluated BEFORE each minibatch's opt.step(), so
+        # it never reflects the LAST update of the iteration. Re-evaluate the
+        # final minibatch once (no grad) to get the realized total movement,
+        # apply the shock rollback to it, and adapt the LR on it.
+        final_kl = approx_kl if n_updates > 0 else 0.0
+        if n_updates > 0 and not shock:
+            with torch.no_grad():
+                logp_post = self.model.evaluate(mb_bundle, b_act[idx])[0]
+                lr_post = (logp_post - b_logp_old[idx]).clamp(-10.0, 10.0)
+                final_kl = float((lr_post.exp() - 1.0 - lr_post).median().item())
+            if snapshot is not None and final_kl > shock_thresh:
+                self.model.load_state_dict(snapshot["model"])
+                self.opt.load_state_dict(snapshot["opt"])
+                shock = True
+
         # Average stats over all minibatch updates performed.
         for k in stats:
             stats[k] /= max(1, n_updates)
+        stats["kl_final"] = final_kl
         if cfg.kl_adaptive and n_updates > 0:
             # Adapt on the iteration's realized (final cumulative) KL, not
             # the per-update average — see PPOConfig.kl_adaptive.
-            self._adapt_lr(approx_kl)
+            self._adapt_lr(final_kl)
         stats["lr"] = self.opt.param_groups[0]["lr"]
         stats["n_updates"] = float(n_updates)
         if cfg.kl_shock_factor > 0.0:

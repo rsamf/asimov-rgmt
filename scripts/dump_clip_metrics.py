@@ -69,26 +69,13 @@ def main() -> None:
             critic_hidden=tuple(net_cfg.get("critic_hidden", [512, 256]))).to(a.device)
         model.load_state_dict(ck["model"])
         model.eval()
-        senv = (ck.get("config") or {}).get("env") or {}
-        drift_obs = bool(senv.get("drift_obs", False)) or dims.cmd_dim > 55
-        drift_obs_proprio = bool(senv.get("drift_obs_proprio", False)) or dims.obs_dim > 98
-        # eval plant MUST match the trained plant (per-joint gains / action_scale)
-        eval_kp = senv.get("kp", 100.0)
-        eval_kd = senv.get("kd", 5.0)
-        eval_action_scale = float(senv.get("action_scale", 0.5))
-        eval_filter_alpha = float(senv.get("action_filter_alpha", 1.0))
-        eval_effort = senv.get("effort_limits", None)
-        eval_dt = float(senv.get("dt", 1.0 / 60.0))
-        eval_decim = int(senv.get("control_decimation", 1))
+        # eval plant MUST match the trained plant: everything comes from the checkpoint.
+        from rgmt.eval_gated import plant_from_ckpt
+        plant = plant_from_ckpt(ck)
     else:
-        eval_dt, eval_decim = 1.0 / 60.0, 1
+        plant = dict(kp=100.0, kd=5.0, action_scale=0.5, action_filter_alpha=1.0, effort_limits=None)
 
-    env = build_eval_env(corpus, a.device, a.n_envs,
-                         drift_obs=drift_obs, drift_obs_proprio=drift_obs_proprio,
-                         kp=eval_kp, kd=eval_kd, action_scale=eval_action_scale,
-                         action_filter_alpha=eval_filter_alpha,
-                         effort_limits=eval_effort,
-                         dt=eval_dt, control_decimation=eval_decim)
+    env = build_eval_env(corpus, a.device, a.n_envs, **plant)
 
     res = run_gated_eval(model, env, clip_ids=None,   # None -> every clip
                          action_noise=a.action_noise, repeats=a.repeats,

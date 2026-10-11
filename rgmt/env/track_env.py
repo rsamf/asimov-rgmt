@@ -57,7 +57,7 @@ from rgmt.utils.rotation import (
     gravity_projection,
     encode_angles,
     quat_to_matrix,
-    yaw_from_quat,
+    yaw_from_quat, quat_rotate_inverse,
 )
 
 
@@ -159,6 +159,11 @@ class EnvConfig:
     # <limit effort> from the URDF) | explicit length-23 list (Nm, ASIMOV order).
     # Part of the PLANT: eval must use the value the policy trained under.
     effort_limits: Union[None, str, list] = None
+    # Angular velocity in o_t: False = world frame (plant-v1 checkpoints, a
+    # heading-dependent input), True = pelvis/body frame, matching the command
+    # window's omega (corpus.command_at) and a real IMU. Observation SEMANTICS
+    # only (no dim change); checkpoints record it.
+    body_frame_ang_vel: bool = False
     episode_len: int = 1000
     z_fall: float = 0.12          # pelvis sits ~0.08 on the ground -> <0.12 = collapsed
     up_dot_min: float = 0.0       # body-up.z < 0 -> tilted past horizontal
@@ -404,7 +409,9 @@ class TrackEnv:
         the rest of o_t) when cfg.drift_obs_proprio.
         """
         g_proj = gravity_projection(self.sim.base_quat)                  # (N, 3)
-        omega = self.sim.base_ang_vel                                    # (N, 3)
+        omega = self.sim.base_ang_vel                                    # (N, 3) world frame
+        if self.cfg.body_frame_ang_vel:
+            omega = quat_rotate_inverse(self.sim.base_quat, omega)       # body frame
         q_act = self.sim.joint_q[:, self.actuated_idx]                   # (N, 23)
         qd_act = self.sim.joint_qd[:, self.actuated_idx]                 # (N, 23)
         q_enc = encode_angles(q_act)                                     # (N, 46)

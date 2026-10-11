@@ -14,7 +14,7 @@ import hydra
 import torch
 from dataclasses import asdict
 from pathlib import Path
-from omegaconf import OmegaConf
+from omegaconf import OmegaConf, open_dict
 
 import nebo as nb
 import warp as wp
@@ -188,6 +188,13 @@ def run_training(cfg) -> dict:
     noise = _build_noise_dict(cfg.env.noise)
     reward_dict = OmegaConf.to_container(cfg.reward, resolve=True) if cfg.reward else {}
 
+    # Pin the torque caps as NUMBERS in the config (and therefore in every
+    # checkpoint): "urdf" resolves against whatever URDF is vendored at eval
+    # time, which changed between plant v1 and v2.
+    if cfg.env.get("effort_limits", None) == "urdf":
+        from rgmt.env.gains import urdf_effort_limits
+        with open_dict(cfg):
+            cfg.env.effort_limits = urdf_effort_limits()
     env_cfg = EnvConfig(
         num_envs=cfg.env.num_envs,
         kp=cfg.env.kp,
@@ -202,6 +209,7 @@ def run_training(cfg) -> dict:
         # Plant-defining: must be forwarded or the dataclass default silently
         # wins (the known unforwarded-field bug class).
         effort_limits=cfg.env.get("effort_limits", None),
+        body_frame_ang_vel=bool(cfg.env.get("body_frame_ang_vel", False)),
         episode_len=cfg.env.episode_len,
         z_fall=cfg.env.z_fall,
         up_dot_min=cfg.env.up_dot_min,
@@ -614,6 +622,7 @@ def run_training(cfg) -> dict:
                             action_scale=env_cfg.action_scale,
                             action_filter_alpha=env_cfg.action_filter_alpha,
                             effort_limits=env_cfg.effort_limits,
+                            body_frame_ang_vel=env_cfg.body_frame_ang_vel,
                             dt=env_cfg.dt,
                             control_decimation=env_cfg.control_decimation)
                         _eval_ids[0] = (split_clip_ids(corpus, split, "test")

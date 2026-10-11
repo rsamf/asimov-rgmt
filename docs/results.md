@@ -12,6 +12,7 @@ The headline metric is the success-gated robust success rate:
 - The greedy (zero-noise) success rate is reported alongside it. Injected evaluation noise can act as beneficial dither for some policies, so quoting both keeps the deterministic behavior honest.
 - MPKPE (mean per-keypoint position error) is reported only over successful episodes, so precision and survival are not conflated. Root-relative pose error reports the same quantity in the root frame, which removes global drift from the number.
 - Evaluation always runs the deterministic plant. Domain randomization is training-only, but plant-defining settings such as torque limits must match the values the policy trained under. The evaluation scripts read them from the checkpoint config.
+- Every number in this document was measured on the plant of the original asimov-1 description (tagged `plant-v1` in this repository: 25-hinge model with passive neck, the first-release torque caps, and the pre-October elbow convention). Checkpoints from that campaign, including the released one, must be evaluated from a checkout of that tag; the evaluation scripts refuse them on the current tree.
 
 ## The released policy
 

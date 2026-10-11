@@ -23,7 +23,7 @@ def build_eval_env(corpus, device, n_envs: int = 256, *,
                    drift_obs: bool = False, drift_obs_proprio: bool = False,
                    kp=100.0, kd=5.0, action_scale: float = 0.5,
                    action_filter_alpha: float = 1.0,
-                   effort_limits=None,
+                   effort_limits=None, body_frame_ang_vel: bool = False,
                    dt: float = 1.0 / 60.0,
                    control_decimation: int = 1) -> TrackEnv:
     """The eval-protocol env: noise-free, no recovery/pushes, root_err gate
@@ -41,7 +41,7 @@ def build_eval_env(corpus, device, n_envs: int = 256, *,
         # would silently score a differently-clocked plant (review R1).
         control_decimation=int(control_decimation), dt=float(dt), kp=kp, kd=kd,
         action_scale=action_scale, action_filter_alpha=action_filter_alpha,
-        effort_limits=effort_limits,
+        effort_limits=effort_limits, body_frame_ang_vel=body_frame_ang_vel,
         foot_friction=0.75, K=9, L=10, episode_len=100000,
         z_fall=0.12, up_dot_min=0.0, head_z_min=0.3, joint_err_done=100.0,
         root_err_done=1.0, noise_level=0.0,
@@ -52,14 +52,28 @@ def build_eval_env(corpus, device, n_envs: int = 256, *,
 
 def run_gated_eval(model, env: TrackEnv, clip_ids: Optional[Sequence[int]] = None, *,
                    action_noise: float = 0.0, repeats: int = 1, seed: int = 0,
-                   per_clip: bool = True) -> dict:
+                   per_clip: bool = True, report_torque: bool = False) -> dict:
     """Roll every clip in ``clip_ids`` (default: all) start->end; success = the
     episode reaches motion_end without a failure termination.
 
     model: RGMTActorCritic in eval mode, or None for pure-PD (zero actions).
     Returns dict(success, total, rate, per_pass, mpkpe_mm, pose_mm, jitter_mrad,
                  clips={name: {success, steps, kpe_mm, pose_mm, ...}}).
+    With ``report_torque`` (needs a capped plant) it also returns
+    ``torque={joint: {sat_frac, mean_ratio}}``: per actuated joint, the share
+    of counted steps on which the PD demand |kp*(q_tar-q) - kd*qd| reached
+    98% of the cap, and its mean as a fraction of the cap.
     """
+    cap = None
+    if report_torque:
+        if env.sim.effort_limit_vec is None:
+            raise ValueError("report_torque needs a capped plant (effort_limits)")
+        cap = torch.tensor(env.sim.effort_limit_vec, device=env.device)
+        kp_v = torch.tensor(env.sim.kp_vec, device=env.device)
+        kd_v = torch.tensor(env.sim.kd_vec, device=env.device)
+        tq_sat = torch.zeros(env.n_act, device=env.device)
+        tq_sum = torch.zeros(env.n_act, device=env.device)
+        tq_n = 0.0
     corpus = env.motion
     dev = env.device
     n_envs = env.N
@@ -137,6 +151,14 @@ def run_gated_eval(model, env: TrackEnv, clip_ids: Optional[Sequence[int]] = Non
                         # teleported fresh-RSI pose (kpe ~ 0) — accumulating it
                         # gave every successful pass one bogus near-zero step.
                         counted = (live & ~done).float()
+                        if cap is not None:
+                            q_tar = env.sim._ctrl_target_flat[env.sim.actuated_dof_global]
+                            q_now = env.sim.joint_q[:, env.sim.actuated_idx]
+                            qd_now = env.sim.joint_qd[:, env.sim.actuated_idx]
+                            ratio = (kp_v * (q_tar - q_now) - kd_v * qd_now).abs() / cap
+                            tq_sat += ((ratio >= 0.98).float() * counted[:, None]).sum(0)
+                            tq_sum += (ratio * counted[:, None]).sum(0)
+                            tq_n += float(counted.sum())
                         kpe_acc += kpe * counted
                         pose_acc += pose * counted
                         step_acc += counted
@@ -190,7 +212,13 @@ def run_gated_eval(model, env: TrackEnv, clip_ids: Optional[Sequence[int]] = Non
         rc["surv_pose_mm"] = round(psum / ss * 1000, 1) if ss > 0 else None
 
     total = succ + fail
+    torque = None
+    if cap is not None and tq_n > 0:
+        names = env.sim.actuated_joint_names
+        torque = {n: {"sat_frac": float(tq_sat[k] / tq_n), "mean_ratio": float(tq_sum[k] / tq_n)}
+                  for k, n in enumerate(names)}
     return dict(
+        torque=torque,
         success=succ, total=total, n_clips=n_clips, repeats=repeats,
         rate=succ / max(total, 1), per_pass=pass_succ,
         mpkpe_mm=mpkpe_sum / max(surv_steps, 1) * 1000,
@@ -219,3 +247,39 @@ def split_clip_ids(corpus, split: dict, role: str) -> list:
         raise ValueError(f"split[{role}]: {len(missing)} names not in corpus, "
                          f"e.g. {missing[:3]}")
     return [name_to_id[n] for n in split[role]]
+
+
+class LegacyPlantError(RuntimeError):
+    """A checkpoint trained on plant v1 was asked to run on the current tree."""
+
+
+def plant_from_ckpt(ck: dict) -> dict:
+    """Plant-defining kwargs for :func:`build_eval_env`, read from a checkpoint.
+
+    Everything the policy trained under and the sim must reproduce: gains,
+    residual scale and filter, torque caps, dt/decimation, observation
+    semantics (drift features, angular-velocity frame). Torque caps are
+    stored as numbers since plant v2; the legacy string ``"urdf"`` means
+    "whatever the vendored URDF said at training time", which no longer holds
+    on this tree, so it is refused with a pointer to the ``plant-v1`` tag.
+    """
+    saved = (ck.get("config") or {}).get("env") or {}
+    dims = ck.get("dims") or {}
+    cmd_dim = int(dims.get("cmd_dim", 55)); obs_dim = int(dims.get("obs_dim", 98))
+    effort = saved.get("effort_limits", None)
+    if isinstance(effort, str):
+        raise LegacyPlantError(
+            f"checkpoint stores effort_limits={effort!r}, i.e. the torque caps of the URDF "
+            "vendored when it was trained (plant v1). The current URDF has different caps, "
+            "so evaluate it from a checkout of the `plant-v1` tag instead.")
+    return dict(
+        drift_obs=bool(saved.get("drift_obs", False)) or cmd_dim > 55,
+        drift_obs_proprio=bool(saved.get("drift_obs_proprio", False)) or obs_dim > 98,
+        kp=saved.get("kp", 100.0), kd=saved.get("kd", 5.0),
+        action_scale=float(saved.get("action_scale", 0.5)),
+        action_filter_alpha=float(saved.get("action_filter_alpha", 1.0)),
+        effort_limits=list(effort) if effort is not None else None,
+        body_frame_ang_vel=bool(saved.get("body_frame_ang_vel", False)),
+        dt=float(saved.get("dt", 1.0 / 60.0)),
+        control_decimation=int(saved.get("control_decimation", 1)),
+    )
