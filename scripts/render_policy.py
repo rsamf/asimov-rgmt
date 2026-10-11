@@ -91,14 +91,14 @@ with torch.no_grad():
         bundle, _, done, _ = env.step(a)
         pos = env.sim.base_pos[0].cpu().numpy()
         quat = env.sim.base_quat[0].cpu().numpy()          # xyzw
-        hinges = env.sim.joint_q[0].cpu().numpy()          # (25,)
+        hinges = env.sim.joint_q[0].cpu().numpy()          # (n_hinges,) qpos convention
         sim_qpos.append(np.concatenate([pos, xyzw_to_wxyz(quat), hinges]))
 sim_qpos = np.stack(sim_qpos)
 
 # ---- reference qpos over the same frames -----------------------------------
 idx = torch.arange(start + 1, end + 1, device=DEV)  # sim state at t corresponds to ref idx t+1
 ref = corpus.at(idx)
-ref_hinges = np.zeros((n, 25), dtype=np.float32)
+ref_hinges = np.zeros((n, env.sim.n_hinges), dtype=np.float32)
 act_idx = env.actuated_idx.cpu().numpy()
 ref_hinges[:, act_idx] = ref["joint_q"].cpu().numpy()
 ref_qpos = np.concatenate([

@@ -307,7 +307,7 @@ class TrackEnv:
             device=self.device,
             effort_limit=_eff,
         )
-        # actuated columns into the 25-wide hinge buffer (LongTensor[23]).
+        # actuated columns into the n_hinges-wide hinge buffer (LongTensor[23]).
         self.actuated_idx = self.sim.actuated_idx.to(self.device)
         self.n_act = int(self.actuated_idx.numel())  # 23
 
@@ -623,8 +623,8 @@ class TrackEnv:
         noise = (torch.rand(M, 23, device=dev) * 2.0 - 1.0) * 0.5
         act_q = ref_q + noise                                      # (M, 23)
 
-        hinge_q = torch.zeros(M, 25, device=dev, dtype=torch.float32)
-        hinge_qd = torch.zeros(M, 25, device=dev, dtype=torch.float32)
+        hinge_q = torch.zeros(M, self.sim.n_hinges, device=dev, dtype=torch.float32)
+        hinge_qd = torch.zeros(M, self.sim.n_hinges, device=dev, dtype=torch.float32)
         hinge_q[:, self.actuated_idx] = act_q.to(torch.float32)
 
         self.sim.reset_idx(
@@ -635,13 +635,13 @@ class TrackEnv:
     def _write_ref_frame(self, env_ids: torch.Tensor, new_idx: torch.Tensor) -> None:
         """Reset given envs to the motion reference frame at ``new_idx`` (RSI).
 
-        Scatters the 23 actuated ref joint angles into the 25-wide hinge
-        buffer at ``actuated_idx`` (passive neck columns left at 0).
+        Scatters the 23 actuated ref joint angles into the n_hinges-wide hinge
+        buffer at ``actuated_idx`` (any non-actuated columns stay 0).
         """
         ref = self.motion.at(new_idx)
         M = int(env_ids.numel())
-        hinge_q = torch.zeros(M, 25, device=self.device, dtype=torch.float32)
-        hinge_qd = torch.zeros(M, 25, device=self.device, dtype=torch.float32)
+        hinge_q = torch.zeros(M, self.sim.n_hinges, device=self.device, dtype=torch.float32)
+        hinge_qd = torch.zeros(M, self.sim.n_hinges, device=self.device, dtype=torch.float32)
         hinge_q[:, self.actuated_idx] = ref["joint_q"].to(self.device)
         hinge_qd[:, self.actuated_idx] = ref["joint_qd"].to(self.device)
         self.sim.reset_idx(

@@ -12,11 +12,11 @@ uses ``base_frame_wxyz`` (Pyroki output is wxyz); we convert at load time.
 
 Joint mapping
 -------------
-The vendored URDF has **25** movable joints: 23 actuated + 2 passive neck
-joints (``neck_yaw_joint``, ``neck_pitch_joint``). The .npz ``joint_angles``
+The vendored URDF's movable joints are exactly the 23 actuated ones (the neck
+is welded in the current asimov-1 description). The .npz ``joint_angles``
 array has exactly 23 columns, one per actuated joint in
 ``ASIMOV_ACTUATED_JOINT_NAMES`` order. We resolve ``actuated_idx`` (indices
-into the 25-joint URDF space) and ``passive_idx`` from joint **names** — never
+into the URDF joint space) and ``passive_idx`` from joint **names** — never
 from hardcoded counts — and assert the resolved actuated count is exactly 23 so
 a stale URDF cannot silently mis-map.
 """
@@ -129,7 +129,7 @@ class MotionRef:
     T_src: int                         # raw frames in source npz
     T_up: int                          # = (T_src - 1) * upsample + 1
     n_actuated: int                    # 23 for Asimov v1
-    n_urdf_joints: int                 # 25 for Asimov v1 (includes 2 passive neck)
+    n_urdf_joints: int                 # movable URDF joints (23 on the current asset)
     device: torch.device
 
     # Per-frame tensors, all shape (T_up, ...) on device.
@@ -140,9 +140,9 @@ class MotionRef:
     base_lin_vel: torch.Tensor         # (T_up, 3) world frame
     base_ang_vel: torch.Tensor         # (T_up, 3) world frame
 
-    # Joint index mappings into the 25-joint URDF space.
+    # Joint index mappings into the URDF joint space.
     actuated_idx: torch.LongTensor     # (23,)
-    passive_idx: torch.LongTensor      # (2,)
+    passive_idx: torch.LongTensor      # (n_passive,) empty on the current asset
     actuated_names: list               # ASIMOV_ACTUATED_JOINT_NAMES order
 
     # Optional keypoint precompute (None when not requested at load time).
@@ -174,7 +174,7 @@ class MotionRef:
                          joint_angles (all in ASIMOV_ACTUATED_JOINT_NAMES order).
             robot_xml:   Path to Asimov MuJoCo XML (unused at runtime; reserved
                          for future actuator-name cross-check).
-            robot_urdf:  Path to Asimov URDF with 25 movable joints.
+            robot_urdf:  Path to the Asimov URDF (23 movable joints).
             physics_fps: Target simulation rate; must be a multiple of src_fps.
             src_fps:     Frame rate of the source npz.
             device:         PyTorch device string or object.
@@ -230,7 +230,7 @@ class MotionRef:
 
         # ---- Resolve actuated / passive joint indices from URDF joint names.
         #
-        # The URDF has 25 movable joints: 23 actuated + 2 passive neck.
+        # Movable URDF joints: the 23 actuated (+ any passive ones listed by name).
         # We must NOT use hardcoded counts; resolve entirely from names so a
         # stale URDF cannot silently mis-map.
         urdf = yourdfpy.URDF.load(

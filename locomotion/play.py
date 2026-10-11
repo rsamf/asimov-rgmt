@@ -43,7 +43,7 @@ def _build_sim(device) -> NewtonSim:
 
 
 def _teleport(sim: NewtonSim, actuated_idx: torch.Tensor, frame: dict, device) -> None:
-    hinge_q = torch.zeros(1, 25, device=device); hinge_qd = torch.zeros(1, 25, device=device)
+    hinge_q = torch.zeros(1, sim.n_hinges, device=device); hinge_qd = torch.zeros(1, sim.n_hinges, device=device)
     hinge_q[:, actuated_idx] = frame["joint_q"].to(device)
     hinge_qd[:, actuated_idx] = frame["joint_qd"].to(device)
     sim.reset_idx(torch.arange(1, device=device), frame["base_pos"].to(device), frame["base_quat"].to(device),

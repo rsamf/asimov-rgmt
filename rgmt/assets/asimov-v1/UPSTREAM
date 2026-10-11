@@ -1,0 +1,5 @@
+Vendored from https://github.com/menloresearch/asimov-1
+branch fix/ankle-roll, commit 346e6cc37e7ea61f396d2a0b728238013c7c99bf (2026-10-10)
+xmls/asimov.xml  <- sim-model/xmls/asimov_1.xml  (byte-identical)
+xmls/asimov.urdf <- sim-model/urdf/asimov_1.urdf (byte-identical)
+assets/meshes/ANKLE_B_NEW.STL added; LEFT/RIGHT_ANKLE_B.STL no longer referenced.

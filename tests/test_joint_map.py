@@ -4,7 +4,7 @@ from rgmt.assets.paths import ROBOT_XML
 
 def test_counts():
     assert len(ASIMOV_ACTUATED_JOINT_NAMES) == 23
-    assert PASSIVE_JOINT_NAMES == ["neck_yaw_joint", "neck_pitch_joint"]
+    assert PASSIVE_JOINT_NAMES == []
 
 def test_names_match_mjcf_motor_joints_in_order():
     root = ET.parse(ROBOT_XML).getroot()

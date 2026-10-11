@@ -194,7 +194,7 @@ def rollout_clip(env: TrackEnv, policy: dict, model_ref, clip: str) -> dict:
                 break
             pos = env.sim.base_pos[0].cpu().numpy()
             quat = env.sim.base_quat[0].cpu().numpy()      # xyzw
-            hinges = env.sim.joint_q[0].cpu().numpy()      # (25,)
+            hinges = env.sim.joint_q[0].cpu().numpy()      # (n_hinges,) qpos convention
             sim_qpos.append(np.concatenate([pos, xyzw_to_wxyz(quat), hinges]))
 
             # tracking error at the advanced idx (same convention as eval_gated)
@@ -216,7 +216,7 @@ def rollout_clip(env: TrackEnv, policy: dict, model_ref, clip: str) -> dict:
     # reference qpos over the same frames (sim state at t == ref idx start+1+t)
     idx = torch.arange(start + 1, start + 1 + frames, device=DEV)
     ref = corpus.at(idx)
-    ref_hinges = np.zeros((frames, 25), dtype=np.float32)
+    ref_hinges = np.zeros((frames, env.sim.n_hinges), dtype=np.float32)
     ref_hinges[:, env.actuated_idx.cpu().numpy()] = ref["joint_q"].cpu().numpy()
     ref_qpos = np.concatenate([
         ref["base_pos"].cpu().numpy(),

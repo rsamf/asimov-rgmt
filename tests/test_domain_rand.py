@@ -40,10 +40,11 @@ def test_urdf_effort_limits_order_and_values():
     eff = urdf_effort_limits()
     assert len(eff) == 23
     by_name = dict(zip(ASIMOV_ACTUATED_JOINT_NAMES, eff))
-    assert by_name["left_ankle_roll_joint"] == 57.0
-    assert by_name["left_knee_joint"] == 75.0
-    assert by_name["left_ankle_pitch_joint"] == 145.0
-    assert by_name["right_hip_roll_joint"] == 90.0
+    # asimov-1 fix/ankle-roll 346e6cc datasheet values (plant v2)
+    assert by_name["left_ankle_roll_joint"] == 17.0
+    assert by_name["left_knee_joint"] == 45.0
+    assert by_name["left_ankle_pitch_joint"] == 40.0
+    assert by_name["right_hip_roll_joint"] == 45.0
     # left/right symmetric
     for n, e in by_name.items():
         if n.startswith("left_"):

@@ -36,13 +36,13 @@ def xyzw_to_wxyz(q):
     return np.concatenate([q[..., 3:4], q[..., 0:3]], axis=-1)
 
 
-def clip_qpos(corpus, name):
-    """(n, nq) MuJoCo qpos rows for one clip: root pos, wxyz quat, 25 hinges."""
+def clip_qpos(corpus, name, n_hinges):
+    """(n, nq) MuJoCo qpos rows for one clip: root pos, wxyz quat, all hinges."""
     ci = corpus.clip_names.index(name)
     s, e = int(corpus.clip_start[ci]), int(corpus.clip_end[ci])
     ref = corpus.at(torch.arange(s, e + 1))
     n = e - s + 1
-    hinges = np.zeros((n, 25), dtype=np.float32)
+    hinges = np.zeros((n, n_hinges), dtype=np.float32)
     hinges[:, corpus.actuated_idx.cpu().numpy()] = ref["joint_q"].cpu().numpy()
     q = np.concatenate([ref["base_pos"].cpu().numpy(),
                         xyzw_to_wxyz(ref["base_quat"].cpu().numpy()), hinges], axis=-1)
@@ -99,8 +99,8 @@ def main():
 
     out_dir = Path(args.out_dir); out_dir.mkdir(parents=True, exist_ok=True)
     for name in names:
-        q_l = clip_qpos(corpus, name)
-        q_r = clip_qpos(corpus, name + MIRROR_SUFFIX)
+        q_l = clip_qpos(corpus, name, m.nq - 7)
+        q_r = clip_qpos(corpus, name + MIRROR_SUFFIX, m.nq - 7)
         assert m.nq == q_l.shape[1], f"nq {m.nq} != qpos width {q_l.shape[1]}"
         safe = re.sub(r"[^A-Za-z0-9._-]+", "_", name).strip("_")
         out = out_dir / f"{safe}{MIRROR_SUFFIX}.mp4"

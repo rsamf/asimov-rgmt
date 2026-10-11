@@ -35,14 +35,14 @@ def test_sim_fk_of_mirrored_pose_is_mirror_of_fk(sim):
     q = (0.05 * (torch.arange(23) + 1) * (-1.0) ** torch.arange(23)).to(dev)   # distinct per joint
     quat = torch.randn(4, generator=g); quat = (quat / quat.norm()).to(dev)
     pos = torch.tensor([0.3, 0.2, 1.2], device=dev)                              # airborne
-    hq = torch.zeros(2, 25, device=dev)
+    hq = torch.zeros(2, sim.n_hinges, device=dev)
     hq[0, sim.actuated_idx] = q
     hq[1, sim.actuated_idx] = mr.mirror_joints(q)
     zeros = torch.zeros(2, 3, device=dev)
     sim.reset_idx(torch.arange(2, device=dev),
                   torch.stack([pos, mr.mirror_vec(pos)]),
                   torch.stack([quat, mr.mirror_quat(quat)]),
-                  zeros, zeros, hq, torch.zeros(2, 25, device=dev))
+                  zeros, zeros, hq, torch.zeros(2, sim.n_hinges, device=dev))
     kp = sim.keypoint_pos                                                        # (2, Kp, 3)
     err = (kp[1] - mr.mirror_keypoints(kp[0])).norm(dim=-1)
     assert err.max() < ATOL, f"max keypoint mirror error {err.max():.2e} m; per-link {err.tolist()}"

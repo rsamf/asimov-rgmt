@@ -12,7 +12,9 @@ ASIMOV_ACTUATED_JOINT_NAMES = [
     "left_elbow_joint", "left_wrist_yaw_joint",
 ]
 
-PASSIVE_JOINT_NAMES = ["neck_yaw_joint", "neck_pitch_joint"]
+# Non-actuated movable joints. Empty since the neck was welded in the asimov-1
+# description (2026-08); kept so loaders can still resolve a passive set by name.
+PASSIVE_JOINT_NAMES: list = []
 
 # Keypoint links for keypoint-tracking reward and privileged x_link.
 KEYPOINT_LINKS = [

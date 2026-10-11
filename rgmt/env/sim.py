@@ -1,17 +1,18 @@
-"""Newton physics wrapper for the vendored 25-joint Asimov humanoid.
+"""Newton physics wrapper for the vendored Asimov v1 humanoid.
 
 A Newton integration layer built around this repo's vendored Asimov-v1 asset (`rgmt.assets.paths.ROBOT_XML`) and its
 canonical joint layout (`rgmt.data.joint_map`).
 
-The robot has a single freejoint plus 25 hinge joints (23 actuated + 2 passive
-neck joints). Newton stores all per-world state in flat arrays
+The robot has a single freejoint plus ``n_hinges`` 1-DoF revolute joints (23,
+all actuated, on the current asset; the neck is welded). Newton stores all
+per-world state in flat arrays
 (`state.joint_q`, `state.joint_qd`, `state.body_q`, ...). We map between flat
 and per-env tensors by slicing fixed-size blocks; the layout per env is:
 
     joint_q[e * nq_per_env : (e + 1) * nq_per_env]
-        = [freejoint_qpos(7), hinge_q[0..24]]
+        = [freejoint_qpos(7), hinge_q[0..n_hinges-1]]
     joint_qd[e * nqd_per_env : (e + 1) * nqd_per_env]
-        = [freejoint_qvel(6), hinge_qd[0..24]]
+        = [freejoint_qvel(6), hinge_qd[0..n_hinges-1]]
 
 The freejoint qpos in Newton is `(x, y, z, qx, qy, qz, qw)` (Warp's `quat`
 type is xyzw). The freejoint qd layout is `(lin_vel(3), ang_vel(3))` — LINEAR
@@ -20,9 +21,9 @@ tests/test_sim_conventions.py — the reverse assumption once silently swapped
 every velocity in the pipeline, and this docstring stated it wrong for a
 month after the fix).
 
-`joint_q` / `joint_qd` expose all 25 hinge columns; `actuated_idx`
-(LongTensor[23]) selects the actuated columns matching
-`ASIMOV_ACTUATED_JOINT_NAMES`.
+`joint_q` / `joint_qd` expose all hinge columns in MuJoCo qpos convention (see
+the joint-angle convention note in ``__init__``); `actuated_idx` (LongTensor[23])
+selects the actuated columns matching `ASIMOV_ACTUATED_JOINT_NAMES`.
 """
 
 from __future__ import annotations
@@ -169,6 +170,11 @@ class NewtonSim:
                                              # aren't reliably preserved through
                                              # Newton's converter; disable global
                                              # self-collision to keep step stable.
+            # The upstream MJCF carries an <option> block (elliptic cone,
+            # impratio 10, noslip, timestep 0.005) meant for plain MuJoCo. The
+            # plant's contact model is pinned in the SolverMuJoCo call below
+            # instead, so the vendored file can stay byte-identical to upstream.
+            parse_mujoco_options=False,
         )
         self._joint_names: list[str] = [_joint_short_name(l) for l in single.joint_label]
         self.n_joints_per_env: int = single.joint_count           # incl. freejoint
@@ -291,6 +297,10 @@ class NewtonSim:
                 self.model,
                 iterations=100,
                 ls_iterations=50,
+                # Pin the contact model the policies were trained with; the
+                # MJCF <option> block is not parsed (see add_mjcf above).
+                cone="pyramidal",
+                impratio=1.0,
                 # njmax raised 200 -> 256: at 2048 envs with recovery poses the
                 # constraint count overflowed (nefc ~220), silently truncating
                 # contacts. GPU headroom exists (peak ~4.8/8 GB at 2048 envs).
@@ -334,14 +344,22 @@ class NewtonSim:
             env_qd_offsets.unsqueeze(1) + self.actuated_dof_local.unsqueeze(0)
         )  # (num_envs, n_actuated)
 
-        # Hinge slices (all non-free joints, in MJCF order = 25 columns).
+        # Hinge slices: every 1-DoF REVOLUTE joint, in MJCF order (23 on the
+        # current asset). Jointless bodies (the frozen neck) import as FIXED
+        # joints with zero coordinates; including them would alias the next
+        # joint's column, so select by type, not by "not free".
         hinge_q_local: list[int] = []
         hinge_qd_local: list[int] = []
         self.hinge_joint_indices: list[int] = []
         hinge_names: list[str] = []
+        n_q = len(joint_q_start)
         for i, jt in enumerate(single.joint_type):
-            if jt == newton.JointType.FREE:
+            if jt != newton.JointType.REVOLUTE:
                 continue
+            q_width = (joint_q_start[i + 1] if i + 1 < n_q else single.joint_coord_count) - joint_q_start[i]
+            if q_width != 1:
+                raise RuntimeError(
+                    f"hinge {self._joint_names[i]!r} has {q_width} coordinates; expected 1")
             hinge_q_local.append(joint_q_start[i])
             hinge_qd_local.append(joint_qd_start[i])
             self.hinge_joint_indices.append(i)
@@ -353,7 +371,7 @@ class NewtonSim:
         self.hinge_q_global = env_q_offsets.unsqueeze(1) + self.hinge_q_local.unsqueeze(0)
         self.hinge_qd_global = env_qd_offsets.unsqueeze(1) + self.hinge_qd_local.unsqueeze(0)
 
-        # actuated_idx: index into the 25 hinge columns selecting the 23
+        # actuated_idx: index into the n_hinges hinge columns selecting the 23
         # actuated joints (in ASIMOV_ACTUATED_JOINT_NAMES order).
         hinge_name_to_col = {n: c for c, n in enumerate(hinge_names)}
         actuated_cols = [hinge_name_to_col[n] for n in actuated_joint_names]
@@ -361,27 +379,28 @@ class NewtonSim:
             actuated_cols, dtype=torch.long, device=self.device
         )
 
-        # ---- MJCF joint ref compensation for actuator targets -------------
-        # The SolverMuJoCo position servo settles at (target - ref) in Newton
-        # joint coordinates: MuJoCo measures qpos relative to each joint's
-        # `ref` attribute, while Newton's joint_q (and the URDF-derived
-        # reference motions) use the raw body-frame zero. Both elbows carry
-        # ref=±0.785398 in asimov.xml, so commanding the reference angle left
-        # them 45° off — beyond the ±0.5 rad residual-action authority, i.e.
-        # uncorrectable by the policy (empirically confirmed 2026-07-13:
-        # target 0 settled at exactly ±0.7856 rad; all ref=0 joints settled
-        # at target). Compensate by adding ref to every incoming target so
-        # `step(t)` settles at t for all joints.
+        # ---- Joint-angle convention: MuJoCo qpos everywhere above the sim --
+        # The MJCF elbows carry ref=±0.785398: MuJoCo's qpos 0 is the straight
+        # arm and the pose drawn by the body frames is qpos = ref. The
+        # retargeted reference motions are raw MuJoCo qpos (GMR exports
+        # data.qpos), the upstream URDF bakes the same offset into the elbow
+        # origin, and MuJoCo position targets are qpos-space. Newton's own
+        # joint_q, however, is the rotation from the drawn pose (qpos - ref;
+        # measured 2026-07-13: target 0 settled at joint_q = -ref). Until
+        # 2026-10 this class added ref to every target so joint_q landed on the
+        # raw clip value, which bent every elbow 45° further than the mocap.
+        # Convert once, here: joint_q returns qpos (Newton + ref), reset_idx
+        # writes Newton (qpos - ref), step() passes qpos targets through.
         import xml.etree.ElementTree as _ET
         _refs = {
             j.get("name"): float(j.get("ref", "0.0") or 0.0)
             for j in _ET.parse(str(ROBOT_XML)).getroot().iter("joint")
             if j.get("name")
         }
-        self._target_ref_offset = torch.tensor(
-            [_refs.get(n, 0.0) for n in actuated_joint_names],
+        self._q_ref = torch.tensor(
+            [_refs.get(n, 0.0) for n in hinge_names],
             dtype=torch.float32, device=self.device,
-        )  # (n_actuated,)
+        )  # (n_hinges,) qpos = newton_q + _q_ref
 
         # Freejoint slice indices.
         self.freejoint_q_global = env_q_offsets.unsqueeze(1) + torch.arange(
@@ -622,12 +641,12 @@ class NewtonSim:
 
     @property
     def joint_q(self) -> torch.Tensor:
-        """All hinge joint angles per env: (num_envs, 25)."""
-        return self._joint_q_flat[self.hinge_q_global]
+        """All hinge joint angles per env in MuJoCo qpos convention: (num_envs, n_hinges)."""
+        return self._joint_q_flat[self.hinge_q_global] + self._q_ref
 
     @property
     def joint_qd(self) -> torch.Tensor:
-        """All hinge joint velocities per env: (num_envs, 25)."""
+        """All hinge joint velocities per env: (num_envs, n_hinges)."""
         return self._joint_qd_flat[self.hinge_qd_global]
 
     @property
@@ -720,10 +739,9 @@ class NewtonSim:
                 f"!= ({self.num_envs}, {self.n_actuated})"
             )
         targets_flat = self._ctrl_target_flat
-        # Add per-joint MJCF ref offsets so the servo settles at the COMMANDED
-        # angle in Newton/URDF coordinates (see _target_ref_offset above).
-        compensated = actuated_target_pos + self._target_ref_offset
-        targets_flat[self.actuated_dof_global] = compensated.to(targets_flat.dtype)
+        # Targets are MuJoCo qpos, which is what the position controller
+        # expects (see the joint-angle convention note in __init__).
+        targets_flat[self.actuated_dof_global] = actuated_target_pos.to(targets_flat.dtype)
 
         # collide + substep loop. Substeps = control_decimation.
         self.contacts = self.model.collide(self.state_0)
@@ -753,8 +771,8 @@ class NewtonSim:
           base_quat_xyzw: (M, 4)
           base_lin_vel:   (M, 3)
           base_ang_vel:   (M, 3)
-          hinge_q:        (M, 25)
-          hinge_qd:       (M, 25)
+          hinge_q:        (M, n_hinges)  MuJoCo qpos convention
+          hinge_qd:       (M, n_hinges)
         """
         env_ids = env_ids.to(self.device, dtype=torch.long)
         jq = self._joint_q_flat
@@ -770,10 +788,10 @@ class NewtonSim:
         jqd[fqd_idx[:, 0:3]] = base_lin_vel.to(jqd.dtype)
         jqd[fqd_idx[:, 3:6]] = base_ang_vel.to(jqd.dtype)
 
-        # Hinge qpos/qd (all 25 columns).
-        hq_idx = self.hinge_q_global[env_ids]                      # (M, 25)
+        # Hinge q/qd (all hinge columns); qpos -> Newton by subtracting ref.
+        hq_idx = self.hinge_q_global[env_ids]                      # (M, n_hinges)
         hqd_idx = self.hinge_qd_global[env_ids]
-        jq[hq_idx] = hinge_q.to(jq.dtype)
+        jq[hq_idx] = (hinge_q.to(self.device) - self._q_ref).to(jq.dtype)
         jqd[hqd_idx] = hinge_qd.to(jqd.dtype)
 
         # Re-evaluate forward kinematics so body_q / body_qd reflect the new

@@ -98,11 +98,16 @@ def test_low_effort_env_collapses_nominal_stands():
     sim.set_effort_limit_scale(scale)
     sim.apply_dynamics_changes()
     tgt = torch.zeros(2, 23, device="cuda:0")
+    # The all-zeros pose is not a balanced stance for this asset (the centre of
+    # mass sits behind the heels, so the robot topples backward after ~2 s even
+    # uncapped). Compare the two envs at 2 s: the nominal env is still upright
+    # while the torque-starved one has folded at the hips and knees.
     for _ in range(120):
         sim.step(tgt)
     z = sim.base_pos[:, 2]
-    assert float(z[0]) > 0.35, f"nominal env should stand, base_z={float(z[0]):.3f}"
-    assert float(z[1]) < 0.30, f"torque-starved env should collapse, base_z={float(z[1]):.3f}"
+    assert float(z[0]) > 0.55, f"nominal env should still be upright at 2 s, base_z={float(z[0]):.3f}"
+    assert float(z[1]) < 0.50, f"torque-starved env should have folded, base_z={float(z[1]):.3f}"
+    assert float(z[0]) - float(z[1]) > 0.15
 
 
 def test_track_env_dr_cadence(tmp_path):

@@ -1,6 +1,9 @@
 <mujoco model="Asimov">
   <compiler angle="radian" meshdir="../assets/meshes" autolimits="true"/>
 
+  <!-- Standalone physics options for the browser viewer (the training sim sets these in Python). -->
+  <option integrator="implicitfast" solver="Newton" iterations="10" ls_iterations="20" timestep="0.005" noslip_iterations="5" impratio="10" cone="elliptic"/>
+
 <default>
   <!-- REMOVED: frictionloss and damping were adding extra dissipation
        on top of PD controller KD. All damping now comes from actuator config only. -->
@@ -54,14 +57,14 @@
     <mesh name="right_hip_yaw_link.STL" file="RIGHT_HIP_YAW.STL" />
     <mesh name="right_knee_link.STL" file="RIGHT_KNEE.STL" />
     <mesh name="right_ankle_pitch_link.STL" file="RIGHT_ANKLE_A.STL" />
-    <mesh name="right_ankle_roll_link.STL" file="RIGHT_ANKLE_B.STL" maxhullvert="64"/>
+    <mesh name="right_ankle_roll_link.STL" file="ANKLE_B_NEW.STL" maxhullvert="64"/>
     <!-- Left Leg -->
     <mesh name="left_hip_pitch_link.STL" file="LEFT_HIP_PITCH.STL" />
     <mesh name="left_hip_roll_link.STL" file="LEFT_HIP_ROLL.STL" />
     <mesh name="left_hip_yaw_link.STL" file="LEFT_HIP_YAW.STL" />
     <mesh name="left_knee_link.STL" file="LEFT_KNEE.STL" />
     <mesh name="left_ankle_pitch_link.STL" file="LEFT_ANKLE_A.STL" />
-    <mesh name="left_ankle_roll_link.STL" file="LEFT_ANKLE_B.STL" maxhullvert="64"/>
+    <mesh name="left_ankle_roll_link.STL" file="ANKLE_B_NEW.STL" maxhullvert="64"/>
     <!-- Upper Body -->
     <mesh name="waist_yaw_link.STL" file="WAIST_YAW.STL" />
     <mesh name="neck_yaw_link.STL" file="NECK_YAW.STL" />
@@ -83,7 +86,7 @@
   <worldbody>
 
     <light pos="1 0 3.5" dir="0 0 -1" directional="true"/>
-    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane" friction="1.2 0.5 0.1" condim="3"/>
     <light directional="true" diffuse=".4 .4 .4" specular="0.1 0.1 0.1" pos="0 0 5.0" dir="0 0 -1" castshadow="false" />
     <light directional="true" diffuse=".6 .6 .6" specular="0.2 0.2 0.2" pos="0 0 4" dir="0 0 -1" />
 
@@ -122,55 +125,57 @@
                 <geom name="left_ankle_pitch_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="left_ankle_pitch_link.STL" class="visual" />
                 <body name="left_ankle_roll_link" pos="-0.0015 0 -0.01" quat="1.0 0.0 0.0 0.0">
                   <joint name="left_ankle_roll_joint" type="hinge" ref="0.0" class="motor" range="-0.35 0.35" axis="-1 0 0" armature="0.0565056" />
-                  <inertial pos="0.0622138434748092 -5.35832001088976E-07 -0.0175655582286945" mass="0.247385486991395" fullinertia="9.90439720977905E-05 0.000396852769393002 0.000470613944702303 3.17954567491051E-09 4.30373679324832E-06 -4.26429155000496E-09" />
+                  <!-- New foot (ANKLE_B_NEW.STL): mass+inertia from friend's CAD; CoM corrected to ankle-local frame. -->
+                  <inertial pos="0.0602 0 -0.0174" mass="0.44468" fullinertia="0.00022344252 0.00109591095 0.00118799414 0.00000001433 -0.00002496970 0.00000001266" />
                   <geom name="left_ankle_roll_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="left_ankle_roll_link.STL" class="visual" />
                   <site name="left_foot" pos="0.05 0 -0.025"/>
-                  <geom name="left_foot1_collision" class="foot_capsule" type="sphere" pos="-0.024  0.025 -0.029"/>
-                  <geom name="left_foot2_collision" class="foot_capsule" type="sphere" pos="-0.024 -0.025 -0.029"/>
-                  <geom name="left_foot3_collision" class="foot_capsule" type="sphere" pos=" 0.114  0.030 -0.029"/>
-                  <geom name="left_foot4_collision" class="foot_capsule" type="sphere" pos=" 0.114 -0.030 -0.029"/>
+                  <geom name="left_foot1_collision" class="foot_capsule" type="sphere" pos="-0.045  0.020 -0.029"/>
+                  <geom name="left_foot2_collision" class="foot_capsule" type="sphere" pos="-0.045 -0.020 -0.029"/>
+                  <geom name="left_foot3_collision" class="foot_capsule" type="sphere" pos=" 0.122  0.028 -0.029"/>
+                  <geom name="left_foot4_collision" class="foot_capsule" type="sphere" pos=" 0.122 -0.028 -0.029"/>
                 </body>
               </body>
             </body>
           </body>
         </body>
-      </body>
+      </body>  
 
       <!-- ==================== RIGHT LEG ==================== -->
-      <body name="right_hip_pitch_link" pos="-0.052 -0.0675 -0.044045" quat="1.0 0.0 0.0 0.0">
+      <body name="right_hip_pitch_link" pos="-0.0519999999999999 -0.0675 -0.0440449999999999" quat="1.0 0.0 0.0 0.0">
         <joint name="right_hip_pitch_joint" type="hinge" ref="0.0" class="motor" range="-1 2.094395" axis="0 -1 0" armature="0.095625" />
         <inertial pos="0.00172891543963928 -0.0360560777469901 0.000568830845064178" mass="1.05629742879001" fullinertia="0.000692329136191241 0.00081258255865219 0.000753384108654712 3.57650372725171E-05 1.84099820196341E-06 -1.20075387086281E-05" />
         <geom name="right_hip_pitch_link_collision" class="body_capsule" fromto="0 -0.02 0 0 -0.04 0" size="0.04"/>
         <geom name="right_hip_pitch_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="right_hip_pitch_link.STL" class="visual" />
-        <body name="right_hip_roll_link" pos="0.0422501 -0.0400002759400924 0" quat="1.0 0.0 0.0 0.0">
+        <body name="right_hip_roll_link" pos="0.04225 -0.04 0" quat="1.0 0.0 0.0 0.0">
           <joint name="right_hip_roll_joint" type="hinge" ref="0.0" class="motor" range="-0.785398 0.785398" axis="1 0 0" armature="0.11" />
           <inertial pos="-0.0115435673741928 0.000361458713869084 -0.0293858908276063" mass="0.414825000619808" fullinertia="0.000265893227185752 0.000357734750091647 0.000234803924170236 -2.33135893268163E-06 -0.000115883966141926 -3.23262089994153E-06" />
           <!-- Hip roll collision removed - covered by adjacent links -->
           <geom name="right_hip_roll_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="right_hip_roll_link.STL" class="visual" />
-          <body name="right_hip_yaw_link" pos="-0.04225 -0.00700892571037183 -0.0515254787497069" quat="1.0 0.0 0.0 0.0">
+          <body name="right_hip_yaw_link" pos="-0.04225 -0.0064271 -0.051601" quat="1.0 0.0 0.0 0.0">
             <joint name="right_hip_yaw_joint" type="hinge" ref="0.0" class="motor" range="-0.785398 0.785398" axis="0 0 -1" armature="0.038" />
             <inertial pos="0.00107595248047253 0.00540534566623335 -0.120743834565757" mass="1.8664722044964" fullinertia="0.00341588734528437 0.00355990015451933 0.00137525272174307 -1.17597783272052E-05 2.91733595317294E-05 0.000119715671332145" />
             <geom name="right_hip_yaw_link_collision" class="body_capsule" fromto="0 0 -0.05 0 0 -0.12" size="0.04"/>
             <geom name="right_hip_yaw_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="right_hip_yaw_link.STL" class="visual" />
-            <body name="right_knee_link" pos="0.00151572865906509 0.00657389099150725 -0.218432672960972" quat="1.0 0.0 0.0 0.0">
+            <body name="right_knee_link" pos="0.0015157 0.0059921 -0.21836" quat="1.0 0.0 0.0 0.0">
               <joint name="right_knee_joint" type="hinge" ref="0.0" class="motor" range="-1.5 0" axis="0 -1 0" armature="0.0339552" />
               <inertial pos="-0.00197598661350925 2.02939875821456E-05 -0.0903745806396054" mass="2.3911016761251" fullinertia="0.00962148210798745 0.00975287232675755 0.00233090346766722 -9.87533742828758E-06 -0.000645094690013399 7.98428941561102E-06" />
               <geom name="right_knee_link_collision" class="body_capsule" fromto="0 0 -0.04 0 0 -0.22" size="0.04"/>
               <geom name="right_knee_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="right_knee_link.STL" class="visual" />
-              <body name="right_ankle_pitch_link" pos="-0.00151572865907394 0.000435034718868785 -0.272344184376349" quat="1.0 0.0 0.0 0.0">
+              <body name="right_ankle_pitch_link" pos="-0.0015157 0.00053505 -0.27234" quat="1.0 0.0 0.0 0.0">
                 <joint name="right_ankle_pitch_joint" type="hinge" ref="0.0" class="motor" range="-0.35 0.35" axis="0 -1 0" armature="0.0565056" />
                 <inertial pos="-0.0011793692600079 6.86716864900516E-08 -0.00617614582815973" mass="0.27308917159726" fullinertia="6.42659452121946E-05 8.0994434836127E-05 4.71926012791403E-05 -1.02281345760111E-10 -1.07558770084606E-06 3.52701184357211E-10" />
                 <!-- Ankle pitch collision removed - very short link, covered by ankle roll -->
                 <geom name="right_ankle_pitch_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="right_ankle_pitch_link.STL" class="visual" />
                 <body name="right_ankle_roll_link" pos="-0.0015 0 -0.01" quat="1.0 0.0 0.0 0.0">
                   <joint name="right_ankle_roll_joint" type="hinge" ref="0.0" class="motor" range="-0.35 0.35" axis="-1 0 0" armature="0.0565056" />
-                  <inertial pos="0.062213843474801 -5.35832001394287E-07 -0.0175655582286942" mass="0.247385486991396" fullinertia="9.90439720977919E-05 0.000396852769393002 0.000470613944702303 3.17954567633572E-09 4.30373679324897E-06 -4.26429155010835E-09" />
+                  <!-- New foot (ANKLE_B_NEW.STL): mass+inertia from friend's CAD; CoM corrected to ankle-local frame. -->
+                  <inertial pos="0.0602 0 -0.0174" mass="0.44468" fullinertia="0.00022344252 0.00109591095 0.00118799414 0.00000001433 -0.00002496970 0.00000001266" />
                   <geom name="right_ankle_roll_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="right_ankle_roll_link.STL" class="visual" />
                   <site name="right_foot" pos="0.05 0 -0.025"/>
-                  <geom name="right_foot1_collision" class="foot_capsule" type="sphere" pos="-0.024  0.025 -0.029"/>
-                  <geom name="right_foot2_collision" class="foot_capsule" type="sphere" pos="-0.024 -0.025 -0.029"/>
-                  <geom name="right_foot3_collision" class="foot_capsule" type="sphere" pos=" 0.114  0.030 -0.029"/>
-                  <geom name="right_foot4_collision" class="foot_capsule" type="sphere" pos=" 0.114 -0.030 -0.029"/>
+                  <geom name="right_foot1_collision" class="foot_capsule" type="sphere" pos="-0.045  0.020 -0.029"/>
+                  <geom name="right_foot2_collision" class="foot_capsule" type="sphere" pos="-0.045 -0.020 -0.029"/>
+                  <geom name="right_foot3_collision" class="foot_capsule" type="sphere" pos=" 0.122  0.028 -0.029"/>
+                  <geom name="right_foot4_collision" class="foot_capsule" type="sphere" pos=" 0.122 -0.028 -0.029"/>
                 </body>
               </body>
             </body>
@@ -187,12 +192,10 @@
 
         <!-- Neck / Head -->
         <body name="neck_yaw_link" pos="-0.0165987745492247 0 0.37816702955645" quat="1.0 0.0 0.0 0.0">
-          <joint name="neck_yaw_joint" type="hinge" ref="0.0" class="passive_upper" range="-1.570796 1.570796" axis="0 0 1" armature="0.0565056" />
           <inertial pos="-0.000232155049410487 -0.000686932388815892 0.0356746841654919" mass="0.53278930532821" fullinertia="0.000264347242952148 0.000248771564307738 0.00020193091979106 -3.48413513698088E-12 1.21262681406962E-05 -8.87364722806786E-11" />
           <!-- Neck yaw collision removed - small link -->
           <geom name="neck_yaw_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="neck_yaw_link.STL" class="visual" />
           <body name="neck_pitch_link" pos="0 0 0.0373499999999998" quat="1.0 0.0 0.0 0.0">
-            <joint name="neck_pitch_joint" type="hinge" ref="0.0" class="passive_upper" range="-0.785398 0.785398" axis="0 1 0" armature="0.0565056" />
             <inertial pos="0.0123887754708077 0.000861952115589091 0.0425189272866255" mass="0.394055609177456" fullinertia="0.00128726711862714 0.00173087070402671 0.00145145415000959 3.55175311514234E-07 0.000142554637413333 -3.99783179861009E-07" />
             <geom name="neck_pitch_link_collision" class="body_capsule" fromto="0.03 0 0 0.03 0 0.04" size="0.05"/>
             <geom name="neck_pitch_link_visual" pos="0 0 0" quat="1.0 0.0 0.0 0.0" type="mesh" mesh="neck_pitch_link.STL" class="visual" />
@@ -270,7 +273,8 @@
     </body>
   </worldbody>
 
-  <!-- Actuators are added programmatically by BuiltinPositionActuatorCfg -->
+  <!-- Torque motors for the standalone viewer (training adds position actuators programmatically
+       via BuiltinPositionActuatorCfg; the viewer applies its own PD in JS and writes torque to ctrl). -->
 
   <contact>
     <exclude body1="pelvis_link" body2="right_hip_pitch_link" />

@@ -31,8 +31,8 @@ def _airborne_reset(sim, lin, ang):
     ids = torch.zeros(1, dtype=torch.long, device=dev)
     pos = torch.tensor([[0.0, 0.0, 1.5]], device=dev)   # airborne: no contacts
     quat = torch.tensor([[0.0, 0.0, 0.0, 1.0]], device=dev)
-    hq = torch.zeros(1, 25, device=dev)
-    hqd = torch.zeros(1, 25, device=dev)
+    hq = torch.zeros(1, sim.n_hinges, device=dev)
+    hqd = torch.zeros(1, sim.n_hinges, device=dev)
     sim.reset_idx(ids, pos, quat,
                   torch.tensor([lin], device=dev),
                   torch.tensor([ang], device=dev), hq, hqd)
