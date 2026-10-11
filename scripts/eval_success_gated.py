@@ -9,7 +9,7 @@ success rate and tracking metrics computed ONLY over steps of successful
 episodes (paper-style MPJPE-on-survivors), so precision and survival stop
 being conflated.
 
-Usage: python scripts/eval_success_gated.py <ckpt.pt|pd> [n_envs] [--limit N] [--gains P --effort none|urdf --torque]
+Usage: python scripts/eval_success_gated.py <ckpt.pt|pd> [n_envs] [--limit N] [--gains P --effort none|urdf[:scale] --torque]
            [--cache DIR] [--dump-clips out.json]
            [--action-noise SIGMA] [--repeats K]
            [--split split.json --role test|train]
@@ -84,8 +84,11 @@ else:
     _prof = sys.argv[sys.argv.index("--gains") + 1] if "--gains" in sys.argv else "leg_weighted"
     _eff = sys.argv[sys.argv.index("--effort") + 1] if "--effort" in sys.argv else "none"
     _kp, _kd = gains_profile(_prof)
+    # --effort urdf:<scale> scales every cap (e.g. 0.8 = DR's lower edge).
+    _eff_scale = float(_eff.split(":", 1)[1]) if _eff.startswith("urdf:") else 1.0
     plant = dict(kp=_kp, kd=_kd, action_scale=0.3, action_filter_alpha=1.0,
-                 effort_limits=urdf_effort_limits() if _eff == "urdf" else None)
+                 effort_limits=([c * _eff_scale for c in urdf_effort_limits()]
+                                if _eff.startswith("urdf") else None))
     print(f"PD plant: gains={_prof} effort={_eff}")
 torque_report = "--torque" in sys.argv
 
