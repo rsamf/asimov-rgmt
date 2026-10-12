@@ -1,5 +1,5 @@
 {
- "source": "test names from rgmt/data/splits/medium.json; train from /mnt/shared/robotics/asimov/runs/tune_v9 (easy, medium)",
+ "source": "test names from rgmt/data/splits/medium.json; train from /mnt/shared/robotics/asimov/runs/tune_v9 (easy, medium); test label of Eyes_Japan_Dataset__kudo__jump-04-horizontal-kudo pinned to hard (tune_v8 label; a rounding tie after the 25/23 saturation rescale) to keep the 60/60/60 test set",
  "train_difficulties": [
   "easy",
   "medium"
@@ -13,11 +13,11 @@
   },
   "hard": {
    "train": 0,
-   "test": 59
+   "test": 60
   },
   "medium": {
    "train": 1644,
-   "test": 61
+   "test": 60
   }
  },
  "difficulty": {
@@ -2516,7 +2516,7 @@
   "Eyes_Japan_Dataset__kanno__accident-02-dodge fast-kanno": "hard",
   "Eyes_Japan_Dataset__kanno__walk-15-pull-kanno": "medium",
   "Eyes_Japan_Dataset__kawaguchi__gesture_etc-39-giant baba-kawaguchi": "medium",
-  "Eyes_Japan_Dataset__kudo__jump-04-horizontal-kudo": "medium",
+  "Eyes_Japan_Dataset__kudo__jump-04-horizontal-kudo": "hard",
   "Eyes_Japan_Dataset__yamaoka__tennis-11-backhand hardhit-yamaoka": "medium",
   "Eyes_Japan_Dataset__yamaoka__tennis-13-backhand slice-yamaoka": "medium",
   "HUMAN4D__Subject3_Medhi__INF_Basketball_S3_01": "hard",
