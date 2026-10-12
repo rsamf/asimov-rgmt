@@ -84,3 +84,15 @@ The asimov-1 description changed in October 2026 (welded neck, new feet, torque 
 | plant v2 | `caps:0.10` | URDF | 4.2 % | 4.4 % |
 
 Stiffer gains track better under PD, but `caps:0.10` saturates its worst joint 7.4 % of steps at 0.8x caps (4.6 % at 0.9x) and clips the residual beyond 0.10 rad, so the plant v2 recipe uses `caps:0.15` (2.3 % nominal, 3.1 % at 0.9x) with the torque-cap randomization narrowed to [0.9, 1.2]. The full sweep is reproduced by `scripts/eval_success_gated.py pd ... --gains caps:<e> --effort urdf[:scale] --torque`.
+
+### Run n24 (plant v2, first run)
+
+Recipe: the n23 recipe with `caps:0.15` gains, torque-cap DR [0.9, 1.2], pelvis-frame angular velocity in the actor observation, the post-step KL guard, and the tune_v9 corpus (`medium_v9.json`). 34,000 iterations, 22 KL-shock rollbacks, no collapse. Standalone success-gated evaluation on the 60/60/60 test split (action noise 0.05, 3 repeats):
+
+| checkpoint | robust success | greedy | MPKPE | pose (root) | jitter |
+|---|---|---|---|---|---|
+| `best_test.pt` (iteration 32,999) | **71.7 %** (easy 91.1, medium 67.8, hard 56.1) | 73.9 % | 97.0 mm | 60.2 mm | 19.4 mrad |
+| final (iteration 33,999) | 71.7 % | 73.3 % | 96.7 mm | 60.7 mm | 18.5 mrad |
+| n23 on plant-v1, for reference | 75.4 % (93.9 / 77.2 / 55.0) | 75.0 % | 96.0 mm | 51.9 mm | 20.5 mrad |
+
+With torque caps 2.4 to 3.6x lower, survival is within 4 points of n23 and zero-shot hard clips are slightly better; the cost is in the medium bucket (−9 points) and in root-frame precision (+8 mm). Greedy exceeds robust by about 2 points, the opposite sign from n23, so the deterministic policy is not dither-assisted. The follow-up levers from the campaign plan (mirror augmentation, lr_max 3e-3, heading-aligned local pose reward) remain untested on this plant.
