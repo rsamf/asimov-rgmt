@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asimov Humanoid Playground</title>
+<link rel="icon" href="data:,">
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
+</script>
+<style>
+  :root { --fg: #10151c; --muted: #5b6573; --accent: #2f6fde; --panel: rgba(255,255,255,0.86); --on: #14a35a; --off: #c23b3b; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #e8ecf1; color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  #view { position: fixed; inset: 0; }
+  .panel { position: fixed; background: var(--panel); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border-radius: 12px; box-shadow: 0 4px 20px rgba(20,30,50,0.12); padding: 12px 16px; }
+  #hud { top: 16px; left: 16px; width: min(380px, calc(100vw - 32px)); box-sizing: border-box; padding: 14px 18px; }
+  #hud h1 { margin: 0 0 4px; font-size: 18px; font-weight: 650; letter-spacing: 0.2px; }
+  #hud .sub { color: var(--muted); font-size: 12px; margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  #hud .sub b { font-weight: 600; color: var(--fg); background: rgba(47,111,222,0.10); border-radius: 5px; padding: 1px 6px; }
+  #hud details { margin: 0 0 10px; }
+  #hud summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--accent); user-select: none; list-style: none; }
+  #hud summary::-webkit-details-marker { display: none; }
+  #hud summary::before { content: "▸"; display: inline-block; width: 12px; transition: transform 0.15s; }
+  #hud details[open] summary::before { transform: rotate(90deg); }
+  #hud .detail { margin-top: 6px; max-height: 34vh; overflow-y: auto; font-size: 12.5px; line-height: 1.5; color: #2b333d; }
+  #hud .detail p { margin: 0 0 6px; }
+  #hud .src { font-size: 12px; color: var(--muted); padding-bottom: 10px; margin-bottom: 10px; border-bottom: 1px solid rgba(20,30,50,0.10); }
+  #hud a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  #hud a:hover { text-decoration: underline; }
+  #keys { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; font-size: 13px; line-height: 1.8; }
+  kbd { display: inline-block; min-width: 18px; text-align: center; padding: 0 5px; margin-right: 2px;
+    border: 1px solid #b9c0ca; border-bottom-width: 2px; border-radius: 5px; background: #fff;
+    font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  #status { top: 16px; right: 16px; text-align: right; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.6; }
+  #badge { display: inline-block; padding: 4px 12px; border-radius: 999px; color: #fff; font: 700 13px system-ui, sans-serif;
+    cursor: pointer; user-select: none; border: none; margin-bottom: 6px; }
+  #badge.on { background: var(--on); } #badge.off { background: var(--off); }
+  #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    background: #e8ecf1; z-index: 10; gap: 14px; }
+  #loading .t { font-size: 20px; font-weight: 650; }
+  #bar { width: min(360px, 80vw); height: 6px; background: #cfd5dd; border-radius: 3px; overflow: hidden; }
+  #bar > div { height: 100%; width: 0; background: #2f6fde; transition: width 0.15s; }
+  #msg { color: var(--muted); font-size: 13px; }
+  #error { display: none; position: fixed; left: 16px; right: 16px; bottom: 16px; z-index: 20; max-height: 40vh; overflow: auto;
+    background: #fff1f1; color: #7a1010; border: 1px solid #e5a3a3; border-radius: 10px; padding: 10px 14px;
+    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
+  @media (max-width: 600px) { #status { top: auto; bottom: 16px; } #hud .detail { max-height: 26vh; } }
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="hud" class="panel">
+  <h1>Asimov Locomotion Player</h1>
+  <div class="sub"><b>Locomotion Corpus</b>→<b>Motion Matching</b>→<b>WBC</b></div>
+  <details id="about" open>
+    <summary>How it works</summary>
+    <div class="detail">
+      <p>Try out my whole body control policy! The directional inputs that you use, control a locomotion controller implemented via Motion Matching.
+      Inspired by video games, I use Motion Matching to select the most optimal clip out of a corpus of retargeted AMASS locomotion clips, at each simulation step, given directional and rotational inputs (W/A/S/D + Q/E).
+      Such clips include the humanoid walking forward, backwards, strafing, and turning.</p>
+      <p>These fetched clips from motion matching are essentially, used as the reference motion inputs into the whole body control (WBC) policy.
+      The WBC policy takes the reference motions and command velocities and outputs the low-level actions delivering them into the PD controller, so that it can move the Asimov based on the input motion, safely without falling.</p>
+    </div>
+  </details>
+  <div class="src">Source: <a href="https://github.com/rsamf/asimov-rgmt" target="_blank" rel="noopener">github.com/rsamf/asimov-rgmt</a></div>
+  <div id="keys">
+    <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>move</span>
+    <span><kbd>Q</kbd><kbd>E</kbd></span><span>turn</span>
+    <span><kbd>P</kbd></span><span>policy on/off</span>
+    <span><kbd>Space</kbd></span><span>reset</span>
+  </div>
+</div>
+<div id="status" class="panel">
+  <button id="badge" class="off" title="Toggle policy (P)">POLICY OFF</button><br>
+  <span id="stats">—</span>
+</div>
+<div id="loading"><div class="t">Asimov Humanoid Playground</div><div id="bar"><div></div></div><div id="msg">Starting…</div></div>
+<div id="error"></div>
+<script>
+  // startup error panel: catches anything, including module load failures
+  (function () {
+    const show = (m) => { const e = document.getElementById('error'); e.style.display = 'block'; e.textContent += m + '\n'; };
+    window.__showError = show;
+    window.addEventListener('error', (ev) => show('Error: ' + (ev.error && ev.error.stack || ev.message)));
+    window.addEventListener('unhandledrejection', (ev) => show('Unhandled: ' + (ev.reason && ev.reason.stack || ev.reason)));
+    // on phones the description would cover the robot: start collapsed
+    if (window.matchMedia('(max-width: 600px)').matches) document.getElementById('about').open = false;
+  })();
+</script>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

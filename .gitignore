@@ -14,4 +14,7 @@ build/
 /private/
 /.nebo_archive/
 superpowers/
+.playwright-mcp/
 locomotion/configs/local.yaml
+/locomotion_webplayer/assets/
+/locomotion_webplayer/dev/
