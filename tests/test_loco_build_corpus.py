@@ -18,20 +18,20 @@ def _walk_npz(path, vx=1.0, n=90):
 
 
 def test_build_end_to_end(tmp_path):
-    d1, d2 = tmp_path / "loco", tmp_path / "v8"
-    d1.mkdir(); d2.mkdir()
-    _walk_npz(d1 / "fwd.npz", 1.0)
-    _walk_npz(d2 / "back.npz", -0.5)
-    _walk_npz(d2 / "excluded.npz", 0.3)
-    make_synthetic_motion(d1 / "still - one.npz")
+    root = tmp_path / "corpus"
+    d = root / "train"; d.mkdir(parents=True)
+    _walk_npz(d / "fwd.npz", 1.0)
+    _walk_npz(d / "back.npz", -0.5)
+    _walk_npz(d / "excluded.npz", 0.3)
+    make_synthetic_motion(d / "still - one.npz")
     sub = tmp_path / "subset.json"
     sub.write_text(json.dumps({"rules_version": "t", "clips": {
         "walk_fwd": ["fwd", "excluded"], "walk_back": ["back"], "idle": ["still - one"]}}))
     cfg = load_config(overrides=["corpus.exclude=[{name: excluded, reason: test}]"])
     out = tmp_path / "out"
-    build(out, sub, [d1, d2], cfg)
+    build(out, sub, root, cfg)
     assert (out / "npz" / "fwd.npz").is_symlink()
-    assert (out / "npz" / "back.npz").resolve() == (d2 / "back.npz").resolve()
+    assert (out / "npz" / "back.npz").resolve() == (d / "back.npz").resolve()
     assert not (out / "npz" / "excluded.npz").exists()
     man = json.loads((out / "cache" / "manifest.json").read_text())
     assert sorted(c["name"] for c in man["clips"]) == ["back", "fwd", "still - one"]
@@ -39,28 +39,30 @@ def test_build_end_to_end(tmp_path):
     assert m2.classes == {"fwd": "walk_fwd", "back": "walk_back", "still - one": "idle"}
     assert abs(m2.speeds["forward"] - 1.0) < 0.1 and abs(m2.speeds["backward"] - 0.5) < 0.1
     assert m2.speeds["lateral"] is None and m2.extra["rules_version"] == "t"
+    assert m2.extra["robotics_root"] == str(root)
     corpus = MotionCorpus.load_cache(out / "cache", output_device="cpu", urdf_hash=file_sha256(ROBOT_URDF),
                                      physics_fps=60, src_fps=30, keypoint_links=KEYPOINT_LINKS)
     assert corpus.n_clips == 3
     # rerun is incremental and removes stale links
-    (out / "npz" / "stale.npz").symlink_to(d1 / "fwd.npz")
-    main(["--out", str(out), "--subset", str(sub), "--dirs", str(d1), str(d2),
+    (out / "npz" / "stale.npz").symlink_to(d / "fwd.npz")
+    main(["--out", str(out), "--subset", str(sub), "--root", str(root),
           "--set", "corpus.exclude=[{name: excluded, reason: test}]"])
     assert not (out / "npz" / "stale.npz").exists()
 
 
 def test_build_never_deletes_regular_files(tmp_path):
-    d1 = tmp_path / "loco"; d1.mkdir()
-    _walk_npz(d1 / "fwd.npz", 1.0)
+    root = tmp_path / "corpus"
+    (root / "train").mkdir(parents=True)
+    _walk_npz(root / "train" / "fwd.npz", 1.0)
     sub = tmp_path / "subset.json"
     sub.write_text(json.dumps({"rules_version": "t", "clips": {"walk_fwd": ["fwd"]}}))
     out = tmp_path / "out"; (out / "npz").mkdir(parents=True)
     _walk_npz(out / "npz" / "keep.npz", 0.4)                 # an unrelated real file in the link dir
-    build(out, sub, [d1], load_config(overrides=["corpus.exclude=[]"]))
+    build(out, sub, root, load_config(overrides=["corpus.exclude=[]"]))
     assert (out / "npz" / "keep.npz").exists() and not (out / "npz" / "keep.npz").is_symlink()
     (out / "npz" / "fwd.npz").unlink()                       # replace our link with a real file
     _walk_npz(out / "npz" / "fwd.npz", 0.4)
     import pytest
     with pytest.raises(FileExistsError):
-        build(out, sub, [d1], load_config(overrides=["corpus.exclude=[]"]))
+        build(out, sub, root, load_config(overrides=["corpus.exclude=[]"]))
     assert (out / "npz" / "fwd.npz").exists() and not (out / "npz" / "fwd.npz").is_symlink()

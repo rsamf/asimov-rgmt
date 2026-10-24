@@ -68,7 +68,7 @@ class CorpusConfig:
     # Machine-specific; set these in configs/local.yaml (gitignored), not here.
     cache_dir: Optional[str] = None      # directory holding cache/ and clips.json (see build_corpus.py)
     subset_json: Optional[str] = None    # asimov-gmr curation/locomotion_subset.json
-    search_dirs: List[str] = field(default_factory=list)   # npz directories, searched in order
+    robotics_root: Optional[str] = None  # corpus root holding train/<name>.npz; None -> $ROBOTICS_ROOT
     mirror: bool = True                  # append left-right mirrored clips at load time
     exclude: List[ExcludeEntry] = field(default_factory=list)
 
@@ -88,6 +88,13 @@ class SceneConfig:
 
 
 @dataclass
+class PhysicsConfig:
+    max_drift: Optional[float] = 0.3     # m; reference pulled toward the robot beyond this (None = never)
+    auto_reset: bool = True              # reset at the robot's position when it falls
+    pd_gains: str = "caps:0.15"          # gains profile for pure PD (no --checkpoint); plant v2 recipe
+
+
+@dataclass
 class LocoConfig:
     fps: int = 60
     src_fps: int = 30
@@ -98,6 +105,7 @@ class LocoConfig:
     blend: BlendConfig = field(default_factory=BlendConfig)
     corpus: CorpusConfig = field(default_factory=CorpusConfig)
     scene: SceneConfig = field(default_factory=SceneConfig)
+    physics: PhysicsConfig = field(default_factory=PhysicsConfig)
 
 
 def load_config(path: str | None = None, overrides: Sequence[str] = ()) -> LocoConfig:

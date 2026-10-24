@@ -12,33 +12,33 @@ def _subset(tmp_path, clips):
     return p
 
 
-def test_resolve_prefers_first_dir_and_handles_spaces(tmp_path):
-    d1, d2 = tmp_path / "loco", tmp_path / "v8"
-    d1.mkdir(); d2.mkdir()
+def test_resolve_maps_names_verbatim_into_train_dir(tmp_path):
+    d = tmp_path / "train"; d.mkdir()
     spaced = "ACCAD__Female1Walking_c3d__B22 - side step left"
-    make_synthetic_motion(d1 / "a.npz"); make_synthetic_motion(d2 / "a.npz")   # both: d1 wins
-    make_synthetic_motion(d2 / f"{spaced}.npz")                                 # only in d2
+    make_synthetic_motion(d / "a.npz"); make_synthetic_motion(d / f"{spaced}.npz")
+    make_synthetic_motion(d / "not_in_subset.npz")                              # never discovered
     sub = _subset(tmp_path, {"walk_fwd": ["a"], "strafe": [spaced]})
-    entries = resolve_clips(sub, [d1, d2], exclude={})
+    entries = resolve_clips(sub, tmp_path, exclude={})
     by = {e.name: e for e in entries}
-    assert by["a"].path == d1 / "a.npz" and by["a"].cls == "walk_fwd"
-    assert by[spaced].path == d2 / f"{spaced}.npz" and by[spaced].cls == "strafe"
+    assert set(by) == {"a", spaced}
+    assert by["a"].path == d / "a.npz" and by["a"].cls == "walk_fwd"
+    assert by[spaced].path == d / f"{spaced}.npz" and by[spaced].cls == "strafe"
 
 
 def test_resolve_raises_listing_missing(tmp_path):
-    d1 = tmp_path / "loco"; d1.mkdir()
-    make_synthetic_motion(d1 / "a.npz")
+    d = tmp_path / "train"; d.mkdir()
+    make_synthetic_motion(d / "a.npz")
     sub = _subset(tmp_path, {"walk_fwd": ["a", "missing_one", "missing_two"]})
     with pytest.raises(FileNotFoundError) as ei:
-        resolve_clips(sub, [d1], exclude={})
+        resolve_clips(sub, tmp_path, exclude={})
     assert "missing_one" in str(ei.value) and "missing_two" in str(ei.value) and "2" in str(ei.value)
 
 
 def test_resolve_honours_excludes(tmp_path):
-    d1 = tmp_path / "loco"; d1.mkdir()
-    make_synthetic_motion(d1 / "a.npz"); make_synthetic_motion(d1 / "b.npz")
+    d = tmp_path / "train"; d.mkdir()
+    make_synthetic_motion(d / "a.npz"); make_synthetic_motion(d / "b.npz")
     sub = _subset(tmp_path, {"walk_fwd": ["a", "b"]})
-    entries = resolve_clips(sub, [d1], exclude={"b": "test reason"})
+    entries = resolve_clips(sub, tmp_path, exclude={"b": "test reason"})
     assert [e.name for e in entries] == ["a"]
 
 

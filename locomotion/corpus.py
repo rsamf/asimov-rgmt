@@ -1,9 +1,10 @@
 """Locomotion corpus: which clips, where they come from, and how to load them.
 
-The frozen selection (asimov-gmr ``curation/locomotion_subset.json``) spans
-two retargeted releases, so every name is resolved against several
-directories in order (``corpus.search_dirs``; machine paths live in the
-gitignored ``configs/local.yaml``). ``ClipsMeta`` (``clips.json`` next to the cache) keeps
+The frozen selection (asimov-gmr ``curation/locomotion_subset.json``) is the
+contract: every name maps verbatim to ``$ROBOTICS_ROOT/train/<name>.npz``
+(names contain spaces and hyphens and are never normalised). The corpus root
+comes from ``corpus.robotics_root`` or the ``ROBOTICS_ROOT`` environment
+variable; machine paths live in the gitignored ``configs/local.yaml``. ``ClipsMeta`` (``clips.json`` next to the cache) keeps
 each clip's gait class and source plus the nominal speeds measured from the
 corpus at build time.
 """
@@ -12,7 +13,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Mapping, Optional, Sequence
+from typing import Dict, List, Mapping, Optional
 
 import torch
 
@@ -33,27 +34,32 @@ class ClipEntry:
     path: Path
 
 
-def resolve_clips(subset_json: Path, search_dirs: Sequence[Path],
+def train_dir(robotics_root: Path) -> Path:
+    """The corpus training directory: one ``<name>.npz`` per clip."""
+    return Path(robotics_root) / "train"
+
+
+def resolve_clips(subset_json: Path, robotics_root: Path,
                   exclude: Mapping[str, str]) -> List[ClipEntry]:
-    """Resolve every name in the subset against ``search_dirs`` (first hit wins).
-    Excluded names are skipped. Raises FileNotFoundError listing names found
-    in no directory."""
+    """Map every name in the subset to ``<robotics_root>/train/<name>.npz``.
+    Excluded names are skipped. Raises FileNotFoundError listing names with
+    no npz (the subset guarantees there are none, so this means a wrong root
+    or a stale subset)."""
     data = json.loads(Path(subset_json).read_text())
+    d = train_dir(robotics_root)
     entries, missing = [], []
     for cls, names in data["clips"].items():
         for name in names:
             if name in exclude:
                 continue
-            for d in search_dirs:
-                p = Path(d) / f"{name}.npz"
-                if p.exists():
-                    entries.append(ClipEntry(name=name, cls=cls, path=p))
-                    break
+            p = d / f"{name}.npz"
+            if p.exists():
+                entries.append(ClipEntry(name=name, cls=cls, path=p))
             else:
                 missing.append(name)
     if missing:
         raise FileNotFoundError(
-            f"resolve_clips: {len(missing)} clip(s) found in none of {[str(d) for d in search_dirs]}: "
+            f"resolve_clips: {len(missing)} clip(s) have no npz in {d}: "
             f"{missing[:10]}{' ...' if len(missing) > 10 else ''}")
     return entries
 

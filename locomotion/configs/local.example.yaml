@@ -3,6 +3,4 @@
 corpus:
   cache_dir: /path/to/caches/loco                    # where build_corpus writes cache/ and clips.json
   subset_json: /path/to/asimov-gmr/curation/locomotion_subset.json
-  search_dirs:                                       # searched in order; first hit wins
-    - /path/to/retargeted/loco/train
-    - /path/to/motions_train/tune_v8
+  robotics_root: /path/to/corpus                     # holds train/<name>.npz; omit to use $ROBOTICS_ROOT

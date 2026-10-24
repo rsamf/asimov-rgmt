@@ -120,6 +120,34 @@ class Player:
             self.last["base_pos"][0, :2] = raw["base_pos"][0, :2]
             self.last["base_quat"][0] = quat_mul(rotvec_to_quat(self._off_rot), raw["base_quat"][0])
 
+    def translate(self, dxy) -> None:
+        """Shift the anchor (and the last emitted root) by a planar world offset."""
+        d = torch.as_tensor(dxy, dtype=torch.float32, device=self.device)
+        self._t = self._t + d
+        if self.last is not None:
+            self.last["base_pos"][0, :2] += d
+
+    def _offsets(self) -> tuple:
+        return (self._off_q, self._off_qd, self._off_z, self._off_vz, self._off_rot, self._off_w)
+
+    def _decayed(self, offs: tuple) -> tuple:
+        q, qd, z, vz, rot, w = offs
+        hl = self.cfg.halflife
+        q, qd = decay_spring_damper_exact(q, qd, hl, self.dt)
+        z, vz = decay_spring_damper_exact(z, vz, hl, self.dt)
+        rot, w = decay_spring_damper_exact(rot, w, hl, self.dt)
+        return q, qd, z, vz, rot, w
+
+    @staticmethod
+    def _blend_row(out: Dict[str, torch.Tensor], raw: Dict[str, torch.Tensor], i: int, offs: tuple) -> None:
+        q, qd, z, vz, rot, w = offs
+        out["joint_q"][i] += q
+        out["joint_qd"][i] += qd
+        out["base_pos"][i, 2] += z
+        out["base_lin_vel"][i, 2] += vz
+        out["base_quat"][i] = quat_mul(rotvec_to_quat(rot), raw["base_quat"][i])
+        out["base_ang_vel"][i] += w
+
     def advance(self) -> Dict[str, torch.Tensor]:
         if self._emit_current:
             self._emit_current = False
@@ -127,22 +155,25 @@ class Player:
             self.frame = min(self.frame + 1, self.clip_end)
         raw = self._raw(self.frame)
         out = {k: v.clone() for k, v in raw.items()}
-        out["joint_q"][0] += self._off_q
-        out["joint_qd"][0] += self._off_qd
-        out["base_pos"][0, 2] += self._off_z
-        out["base_lin_vel"][0, 2] += self._off_vz
-        out["base_quat"][0] = quat_mul(rotvec_to_quat(self._off_rot), raw["base_quat"][0])
-        out["base_ang_vel"][0] += self._off_w
+        self._blend_row(out, raw, 0, self._offsets())
         self.last = out
         # decay for the next tick (this tick's emission used the undecayed offset)
-        hl = self.cfg.halflife
-        self._off_q, self._off_qd = decay_spring_damper_exact(self._off_q, self._off_qd, hl, self.dt)
-        self._off_z, self._off_vz = decay_spring_damper_exact(self._off_z, self._off_vz, hl, self.dt)
-        self._off_rot, self._off_w = decay_spring_damper_exact(self._off_rot, self._off_w, hl, self.dt)
+        (self._off_q, self._off_qd, self._off_z, self._off_vz,
+         self._off_rot, self._off_w) = self._decayed(self._offsets())
         return {k: v.clone() for k, v in out.items()}
 
-    def preview(self, k: int) -> Dict[str, torch.Tensor]:
-        """Next k raw frames of the current clip through the anchor, clamped at the clip end."""
+    def preview(self, k: int, blended: bool = False) -> Dict[str, torch.Tensor]:
+        """Next k frames of the current clip through the anchor, clamped at the clip end.
+        ``blended`` adds the decaying switch offsets, i.e. exactly what ``advance``
+        would emit over the next k ticks if no search switched clips."""
         start = self.next_frame
         idx = torch.arange(start, start + k, device=self.device).clamp(max=self.clip_end)
-        return self.map_frames(idx)
+        raw = self.map_frames(idx)
+        if not blended:
+            return raw
+        out = {key: v.clone() for key, v in raw.items()}
+        offs = self._offsets()
+        for i in range(k):
+            self._blend_row(out, raw, i, offs)
+            offs = self._decayed(offs)
+        return out

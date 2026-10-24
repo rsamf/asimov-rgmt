@@ -105,3 +105,19 @@ def test_preview_and_clip_end_clamp():
     assert torch.allclose(pv["joint_q"][2], pv["joint_q"][4])       # clamped at the clip end
     p.advance(); p.advance(); p.advance()
     assert p.frame == end and p.next_frame == end
+
+
+def test_blended_preview_is_what_advance_emits_after_a_switch():
+    corpus, p = _player()
+    p.reset(_start(corpus, "walk_fwd") + 5, xy=(0.5, 0.2), yaw=0.3)
+    p.advance(); p.advance()
+    p.switch(_start(corpus, "turn_left") + 40)             # leaves non-zero offsets
+    p.advance()
+    pv = p.preview(6, blended=True)
+    for i in range(6):
+        out = p.advance()
+        for k in KEYS:
+            if k == "base_quat":
+                assert _qclose(pv[k][i], out[k][0], 1e-5)
+            else:
+                assert torch.allclose(pv[k][i], out[k][0], atol=1e-5), (k, i)

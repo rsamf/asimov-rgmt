@@ -1,8 +1,10 @@
-"""Kinematic test scene for the motion-matching controller (no physics).
+"""Test scene for the motion-matching controller, kinematic or in physics.
 
     uv run python -m locomotion.play                      # corpus from configs/local.yaml
     uv run python -m locomotion.play --corpus <dir>       # dir holding cache/ and clips.json
     uv run python -m locomotion.play --viewer null --script "w:2,wd:1,q:1" --seconds 4
+    uv run python -m locomotion.play --physics            # pure PD tracking of the controller
+    uv run python -m locomotion.play --checkpoint <ckpt.pt>   # a tracking policy (implies --physics)
 
 Keys in the GL window: W/A/S/D translate in the heading frame, Q/E turn,
 Space resets to the origin. A third-person camera follows the robot and the
@@ -12,6 +14,11 @@ through the simulator's kinematic reset (exactly what ``rgmt.view --mode
 replay`` does); physics never steps. An overlay draws the predicted
 trajectory; the clip/class/speed line is shown in the viewer's stats panel
 (or printed once per second when the viewer has no UI).
+
+With ``--physics`` the simulator steps instead: the controller's frames are
+the reference a tracking policy (``--checkpoint``) or pure PD follows, the
+camera follows the simulated robot, and a fall restarts from idle where the
+robot lies (see ``locomotion/physics.py`` and the ``physics:`` config block).
 """
 from __future__ import annotations
 
@@ -32,6 +39,7 @@ from locomotion.config import load_config
 from locomotion.controller import MotionMatchingController
 from locomotion.corpus import load_locomotion_corpus
 from locomotion.geom import wrap_angle, yaw_from_quat
+from locomotion.physics import PhysicsDriver
 
 _KEYS = ("w", "a", "s", "d", "q", "e")
 
@@ -143,9 +151,15 @@ def run(args) -> int:
         cfg.scene.camera.follow = False
     corpus, meta = load_locomotion_corpus(cfg, device)
     ctl = MotionMatchingController(corpus, meta, cfg, device=device)
-    ctl.reset()
-
-    sim = _build_sim(device)
+    physics = None
+    if args.physics or args.checkpoint:
+        physics = PhysicsDriver(ctl, corpus, cfg, args.checkpoint, device)
+        physics.reset()
+        sim = physics.sim
+        print(f"physics: {'policy ' + args.checkpoint + f' (iteration {physics.iteration})' if args.checkpoint else 'pure PD (' + cfg.physics.pd_gains + ')'}")
+    else:
+        ctl.reset()
+        sim = _build_sim(device)
     actuated_idx = sim.actuated_idx.to(device)
     viewer = _make_viewer(args.viewer, args.headless)
     viewer.set_model(sim.model)
@@ -177,20 +191,27 @@ def run(args) -> int:
                     break
             elif can_poll:
                 if viewer.is_key_down("space"):
-                    ctl.reset()
+                    physics.reset() if physics is not None else ctl.reset()
                     if follow is not None:
                         follow.reset()
                 cmd = from_keys({k for k in _KEYS if viewer.is_key_down(k)})
             else:
                 cmd = Command()
-            frame = ctl.step(cmd)
-            _teleport(sim, actuated_idx, frame, device)
+            if physics is not None:
+                physics.step(cmd)
+                root_pos, root_quat = sim.base_pos[0], sim.base_quat[0]
+            else:
+                frame = ctl.step(cmd)
+                _teleport(sim, actuated_idx, frame, device)
+                root_pos, root_quat = frame["base_pos"][0], frame["base_quat"][0]
             if follow is not None:
-                follow.apply(viewer, frame["base_pos"][0, :2].tolist(), float(yaw_from_quat(frame["base_quat"][0])))
+                follow.apply(viewer, root_pos[:2].tolist(), float(yaw_from_quat(root_quat)))
 
             d = ctl.debug
             status["text"] = (f"{d.clip_class:9s} {d.clip_name} @ {d.clip_frame}   "
                               f"|v|={float(d.vel.norm()):.2f} m/s  yaw_rate={d.yaw_rate:+.2f} rad/s")
+            if physics is not None:
+                status["text"] += f"   drift={physics.drift:.2f} m  falls={physics.falls}"
             if not can_poll and t_sim - last_print >= 1.0:
                 print(f"t={t_sim:5.1f}s  {status['text']}", flush=True); last_print = t_sim
 
@@ -224,6 +245,10 @@ def main(argv=None) -> int:
     p.add_argument("--seconds", type=float, default=None, help="stop after this many simulated seconds")
     p.add_argument("--device", default="cuda:0")
     p.add_argument("--fps", type=float, default=60.0, help="real-time pacing for the GL viewer")
+    p.add_argument("--physics", action="store_true",
+                   help="step the simulator: pure PD tracking of the controller (a policy with --checkpoint)")
+    p.add_argument("--checkpoint", default=None,
+                   help="RGMT checkpoint whose policy tracks the controller in physics (implies --physics)")
     p.add_argument("--free-camera", action="store_true",
                    help="Newton's fly camera instead of the third-person follow camera (scene.camera.follow=false)")
     return run(p.parse_args(argv))

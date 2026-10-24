@@ -35,13 +35,9 @@ corpus:
   # Machine-specific paths live in configs/local.yaml (gitignored; copy local.example.yaml).
   cache_dir: null          # directory holding cache/ and clips.json (output of build_corpus)
   subset_json: null        # asimov-gmr curation/locomotion_subset.json (the frozen clip selection)
-  search_dirs: []          # retargeted npz directories, searched in order (recovery run first, then v8)
+  robotics_root: null      # corpus root; clips are read from <root>/train/<name>.npz (null -> $ROBOTICS_ROOT)
   mirror: true             # double the corpus with left-right mirrors (symmetric strafes/turns)
-  exclude:                 # frozen-subset clips dropped at build time, with the reason
-    - name: "ACCAD__MartialArtsWalksTurns_c3d__E9 - side step left"
-      reason: "martial-arts stance: pelvis faces off the direction of travel (asimov-gmr QA outlier)"
-    - name: "ACCAD__MartialArtsWalksTurns_c3d__E10 - side step right"
-      reason: "martial-arts stance: pelvis faces off the direction of travel (asimov-gmr QA outlier)"
+  exclude: []              # frozen-subset clips dropped at build time: [{name: ..., reason: ...}]
 
 scene:
   camera:                  # play.py third-person camera; keys then drive only the robot
@@ -50,3 +46,9 @@ scene:
     height: 1.6            # m above the ground
     target_height: 0.8     # m above the ground the camera looks at
     halflife: 0.25         # s; smoothing of the followed position and heading
+
+physics:                   # play.py --physics / --checkpoint
+  max_drift: 0.3           # m; when the robot lags the reference by more, the reference is pulled
+                           # toward it (null = never), keeping drift features in the trained range
+  auto_reset: true         # on a fall, restart from idle at the robot's position
+  pd_gains: "caps:0.15"    # gains for pure PD without --checkpoint (plant v2 recipe, URDF torque caps)

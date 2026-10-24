@@ -12,9 +12,6 @@ def test_defaults_load_from_yaml():
     assert cfg.search.interval == 6
     assert cfg.blend.halflife == 0.1
     assert cfg.corpus.mirror is True
-    names = [e.name for e in cfg.corpus.exclude]
-    assert "ACCAD__MartialArtsWalksTurns_c3d__E9 - side step left" in names
-    assert all(e.reason for e in cfg.corpus.exclude)
 
 
 def test_dotlist_overrides_win():

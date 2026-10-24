@@ -111,6 +111,24 @@ def compute_fallen(base_z, up_z, head_z, z_fall, up_dot_min, head_z_min):
     return fallen
 
 
+def drift_features(ref_pos, ref_quat, base_pos, base_quat, noise=None) -> torch.Tensor:
+    """Drift-feedback features (N, S, 5) of reference roots ``ref_pos (N,S,3)``,
+    ``ref_quat (N,S,4)`` relative to the robot root ``base_pos (N,3)``,
+    ``base_quat (N,4)``; see ``TrackEnv._drift_features``. ``noise``, if given,
+    maps (dp, dyaw) -> (dp, dyaw) before the heading rotation and cos/sin encode.
+    """
+    dp = ref_pos - base_pos[:, None, :]                                   # (N,S,3) world
+    yaw_r = yaw_from_quat(base_quat)                                      # (N,)
+    dyaw = yaw_from_quat(ref_quat) - yaw_r[:, None]                       # (N,S)
+    if noise is not None:
+        dp, dyaw = noise(dp, dyaw)
+    cy, sy = torch.cos(yaw_r)[:, None], torch.sin(yaw_r)[:, None]
+    dx = cy * dp[..., 0] + sy * dp[..., 1]
+    dy = -sy * dp[..., 0] + cy * dp[..., 1]
+    return torch.stack(
+        [dx, dy, dp[..., 2], torch.cos(dyaw), torch.sin(dyaw)], dim=-1)
+
+
 def _default_noise() -> dict:
     """Table II command-noise amplitudes (uniform half-widths)."""
     return {
@@ -446,18 +464,15 @@ class TrackEnv:
         d = self.device
         ref_pos = self.motion.base_pos[flat].to(d).reshape(*grid.shape, 3)    # (N,S,3)
         ref_quat = self.motion.base_quat[flat].to(d).reshape(*grid.shape, 4)  # (N,S,4)
-        dp = ref_pos - self.sim.base_pos[:, None, :]                          # (N,S,3) world
-        yaw_r = yaw_from_quat(self.sim.base_quat)                             # (N,)
-        dyaw = yaw_from_quat(ref_quat) - yaw_r[:, None]                       # (N,S)
+        noise = None
         if noisy:
             nl = self.cfg.noise_level
-            dp = dp + (torch.rand_like(dp) * 2.0 - 1.0) * (self.cfg.noise["p"] * nl)
-            dyaw = dyaw + (torch.rand_like(dyaw) * 2.0 - 1.0) * (self.cfg.noise["yaw"] * nl)
-        cy, sy = torch.cos(yaw_r)[:, None], torch.sin(yaw_r)[:, None]
-        dx = cy * dp[..., 0] + sy * dp[..., 1]
-        dy = -sy * dp[..., 0] + cy * dp[..., 1]
-        return torch.stack(
-            [dx, dy, dp[..., 2], torch.cos(dyaw), torch.sin(dyaw)], dim=-1)
+
+            def noise(dp, dyaw):
+                dp = dp + (torch.rand_like(dp) * 2.0 - 1.0) * (self.cfg.noise["p"] * nl)
+                dyaw = dyaw + (torch.rand_like(dyaw) * 2.0 - 1.0) * (self.cfg.noise["yaw"] * nl)
+                return dp, dyaw
+        return drift_features(ref_pos, ref_quat, self.sim.base_pos, self.sim.base_quat, noise)
 
     def _command_window_noisy(self, idx: torch.Tensor) -> torch.Tensor:
         """Centered command window (N, 21, cmd_dim), with Table II noise if training.

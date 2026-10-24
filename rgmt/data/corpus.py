@@ -11,6 +11,16 @@ from rgmt.data.cache_key import SCHEMA_VERSION, params_key
 TENSOR_KEYS = ["base_pos", "base_quat", "joint_q", "joint_qd",
                "base_lin_vel", "base_ang_vel", "kp_pos_world", "kp_vel_world"]
 
+def command_from_frames(f: dict) -> torch.Tensor:
+    """g_t (B,55) from reference frames with the keys of ``MotionCorpus.at``:
+    body-frame linear and angular velocity, gravity projection, encoded joint angles."""
+    v = quat_rotate_inverse(f["base_quat"], f["base_lin_vel"])
+    w = quat_rotate_inverse(f["base_quat"], f["base_ang_vel"])
+    g = gravity_projection(f["base_quat"])
+    q = encode_angles(f["joint_q"])
+    return torch.cat([v, w, g, q], dim=-1)
+
+
 @dataclass
 class MotionCorpus:
     physics_fps: int
@@ -143,12 +153,7 @@ class MotionCorpus:
         }
 
     def command_at(self, idx) -> torch.Tensor:
-        f = self.at(idx)
-        v = quat_rotate_inverse(f["base_quat"], f["base_lin_vel"])
-        w = quat_rotate_inverse(f["base_quat"], f["base_ang_vel"])
-        g = gravity_projection(f["base_quat"])
-        q = encode_angles(f["joint_q"])
-        return torch.cat([v, w, g, q], dim=-1)            # (B,55)
+        return command_from_frames(self.at(idx))
 
     def command_window(self, idx, L: int) -> torch.Tensor:
         i = idx.to(self.storage_device)

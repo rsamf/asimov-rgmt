@@ -109,8 +109,8 @@ class MotionMatchingController:
         self._update_debug(searched, v_des, w_des)
         return out
 
-    def preview(self, k: int) -> Dict[str, torch.Tensor]:
-        return self.player.preview(k)
+    def preview(self, k: int, blended: bool = False) -> Dict[str, torch.Tensor]:
+        return self.player.preview(k, blended)
 
     def _update_debug(self, searched: bool, v_des: torch.Tensor, w_des: float) -> None:
         f = self.player.frame
