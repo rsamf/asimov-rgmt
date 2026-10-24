@@ -99,13 +99,27 @@ class TrajectoryModel {
     const r = springVel(0, this.yawRate, this.yawAcc, wDes, this.rh, this.dt);
     this.yawRate = r[1]; this.yawAcc = r[2];
   }
+  // world-frame displacements and relative yaws at the given times (s)
+  predictDeltasAt(times, vDes, wDes) {
+    const dp = [], dyaw = [];
+    for (const t of times) {
+      dp.push([0, 1].map(i => springVel(0, this.vel[i], this.acc[i], vDes[i], this.vh, t)[0]));
+      dyaw.push(springVel(0, this.yawRate, this.yawAcc, wDes, this.rh, t)[0]);
+    }
+    return { dp, dyaw };
+  }
+  predictDeltas(vDes, wDes) { return this.predictDeltasAt(this.horizons.map(h => h * this.dt), vDes, wDes); }
+  // == Python predict_world: future world positions and yaws, for drawing
+  predictWorld(xy0, yaw0, vDes, wDes, times = null) {
+    const { dp, dyaw } = times ? this.predictDeltasAt(times, vDes, wDes) : this.predictDeltas(vDes, wDes);
+    return { xy: dp.map(d => [xy0[0] + d[0], xy0[1] + d[1]]), yaw: dyaw.map(a => yaw0 + a) };
+  }
   // -> traj_raw (4H): all heading-frame positions, then all facing directions
   predictRaw(yaw0, vDes, wDes) {
     const H = this.horizons.length, out = new Array(4 * H);
+    const { dp: dps, dyaw: dyaws } = this.predictDeltas(vDes, wDes);
     for (let k = 0; k < H; k++) {
-      const t = this.horizons[k] * this.dt;
-      const dp = [0, 1].map(i => springVel(0, this.vel[i], this.acc[i], vDes[i], this.vh, t)[0]);
-      const dyaw = springVel(0, this.yawRate, this.yawAcc, wDes, this.rh, t)[0];
+      const dp = dps[k], dyaw = dyaws[k];
       const ph = rotate2(dp, -yaw0);
       out[2 * k] = ph[0]; out[2 * k + 1] = ph[1];
       out[2 * H + 2 * k] = Math.cos(dyaw); out[2 * H + 2 * k + 1] = Math.sin(dyaw);
@@ -372,7 +386,20 @@ export class Controller {
     this.traj.step(vDes, wDes);
     this.sinceSearch += 1;
     this.lastCmd = cmd;
+    this._vDes = vDes; this._wDes = wDes;
     return out;
+  }
+  // Predicted trajectory from the post-step state (Python _update_debug), for the
+  // overlay: the horizon knots plus `nSamples` evenly spaced points for a smooth curve.
+  trajectory(nSamples = 12) {
+    const p = this.player, t = this.traj;
+    const vDes = this._vDes ?? [0, 0], wDes = this._wDes ?? 0;
+    const root = p.worldXY, yaw0 = p.worldYaw;
+    const knots = t.predictWorld(root, yaw0, vDes, wDes);
+    const tMax = Math.max(...t.horizons) * t.dt;
+    const times = Array.from({ length: nSamples }, (_, i) => tMax * (i + 1) / nSamples);
+    const samples = t.predictWorld(root, yaw0, vDes, wDes, times);
+    return { root: [root[0], root[1]], yaw0, xy: knots.xy, yaw: knots.yaw, samples: samples.xy, vDes, wDes };
   }
   preview(k) { return this.player.preview(k); }
   translate(shift) { this.player.translate(shift); }

@@ -65,6 +65,83 @@ function primitiveGeometry(type, size) {
   }
 }
 
+// Directional overlay (locomotion/play.py TrajectoryOverlay): the controller's
+// spring-predicted path as a fading ground ribbon, a chevron per horizon along the
+// predicted facing, and a ring under the reference root. Built in the MuJoCo frame;
+// buffers are allocated once and rewritten per frame.
+const TRAJ_COLOR = new THREE.Color('#ff8a1f');
+const TRAJ_Z = 0.008, RIBBON_W = 0.05;
+
+class TrajectoryOverlay {
+  constructor(parent, nSamples = 12, nKnots = 3) {
+    this.group = new THREE.Group();
+    parent.add(this.group);
+    // drawn last and through the robot: the follow camera sits behind it, so the
+    // path ahead would otherwise be hidden by the body
+    const flat = (opts) => new THREE.MeshBasicMaterial({
+      transparent: true, depthWrite: false, depthTest: false, side: THREE.DoubleSide, toneMapped: false, ...opts });
+
+    // ribbon: (nSamples + 1) cross-sections, two vertices each, RGBA vertex colours for the fade
+    const n = this.nPts = nSamples + 1;
+    this.pos = new Float32Array(n * 2 * 3);
+    const col = new Float32Array(n * 2 * 4), idx = [];
+    for (let i = 0; i < n; i++) {
+      const a = 0.85 * (1 - 0.75 * i / (n - 1));
+      for (let s = 0; s < 2; s++) col.set([TRAJ_COLOR.r, TRAJ_COLOR.g, TRAJ_COLOR.b, a], (2 * i + s) * 4);
+      if (i < n - 1) idx.push(2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 1, 2 * i + 3, 2 * i + 2);
+    }
+    const rg = this.ribbonGeo = new THREE.BufferGeometry();
+    rg.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
+    rg.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    rg.setIndex(idx);
+    this.ribbon = new THREE.Mesh(rg, flat({ vertexColors: true }));
+    this.ribbon.frustumCulled = false;
+    this.ribbon.renderOrder = 10;
+    this.group.add(this.ribbon);
+
+    // chevron pointing +x, centred on its tip-to-notch midpoint
+    const cs = new THREE.Shape();
+    cs.moveTo(0.11, 0); cs.lineTo(-0.05, 0.075); cs.lineTo(-0.01, 0); cs.lineTo(-0.05, -0.075); cs.closePath();
+    const chevGeo = new THREE.ShapeGeometry(cs);
+    this.chevrons = Array.from({ length: nKnots }, (_, k) => {
+      const m = new THREE.Mesh(chevGeo, flat({ color: TRAJ_COLOR, opacity: 0.95 - 0.25 * k }));
+      m.position.z = TRAJ_Z + 0.001;
+      m.renderOrder = 12;
+      this.group.add(m);
+      return m;
+    });
+
+    this.ring = new THREE.Mesh(new THREE.RingGeometry(0.16, 0.19, 48),
+      flat({ color: TRAJ_COLOR, opacity: 0.45 }));
+    this.ring.position.z = TRAJ_Z;
+    this.ring.renderOrder = 11;
+    this.group.add(this.ring);
+  }
+
+  set visible(v) { this.group.visible = v; }
+  get visible() { return this.group.visible; }
+
+  update(t) {
+    if (!t) { this.group.visible = false; return; }
+    const pts = [t.root, ...t.samples];
+    const P = this.pos, n = this.nPts, h = RIBBON_W / 2;
+    let tx = Math.cos(t.yaw0), ty = Math.sin(t.yaw0);         // tangent; facing when the path has no length
+    for (let i = 0; i < n; i++) {
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+      if (L > 1e-5) { tx = dx / L; ty = dy / L; }
+      const [x, y] = pts[i];
+      P.set([x - ty * h, y + tx * h, TRAJ_Z, x + ty * h, y - tx * h, TRAJ_Z], 6 * i);
+    }
+    this.ribbonGeo.attributes.position.needsUpdate = true;
+    this.chevrons.forEach((m, k) => {
+      m.position.x = t.xy[k][0]; m.position.y = t.xy[k][1];
+      m.rotation.z = t.yaw[k];
+    });
+    this.ring.position.x = t.root[0]; this.ring.position.y = t.root[1];
+  }
+}
+
 export class Renderer {
   constructor(container) {
     const r = this.renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -99,6 +176,8 @@ export class Renderer {
     this.world = new THREE.Group();           // MuJoCo frame
     this.world.rotation.x = -Math.PI / 2;
     scene.add(this.world);
+    this.traj = new TrajectoryOverlay(this.world);
+    this.showTraj = true;
     this.geoms = [];
     this.cam = { xy: null, yaw: 0, distance: 3.0, height: 1.6, targetHeight: 0.8, halflife: 0.25 };
 
@@ -175,4 +254,9 @@ export class Renderer {
   }
 
   resetCamera() { this.cam.xy = null; }
+
+  setTrajectory(t) {
+    this.traj.visible = this.showTraj && !!t;
+    if (this.traj.visible) this.traj.update(t);
+  }
 }

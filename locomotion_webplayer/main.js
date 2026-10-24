@@ -67,7 +67,8 @@ class Driver {
     this.cmd = new Float32Array(this.W * this.D);
     this.zeros = new Float32Array(this.A);
     this.past = []; this.cur = null;
-    this.falls = 0; this.policyOn = !!policy;
+    this.falls = 0;
+    this.physics = true;          // false: the controller drives the robot kinematically
     this.target = new Float64Array(this.A);
   }
 
@@ -77,9 +78,31 @@ class Driver {
     this.cur = cloneFrame(ctl.step({ move: [0, 0], yaw: 0 }));
     this.sim.teleport(this.cur);
     this.past = Array.from({ length: this.L }, () => cloneFrame(this.cur));
+    this._warmStart();
+  }
+
+  // policy state for a robot standing on `cur` (after a teleport)
+  _warmStart() {
     this.prevAction.fill(0); this.filt.fill(0);
     this.sim.buildObs(this.prevAction, this.obs);
     for (let i = 0; i < this.L; i++) this.history.set(this.obs, i * this.O);
+  }
+
+  // Switch modes without resetting the controller: off -> the robot snaps onto the
+  // reference (within max_drift); on -> physics starts from the reference pose and
+  // velocities mid-stride, like reference-state init in training.
+  setPhysics(on) {
+    if (on === this.physics) return;
+    this.physics = on;
+    if (on) { this.sim.teleport(this.cur); this._warmStart(); }
+  }
+
+  tickKinematic(command) {
+    const t0 = performance.now();
+    this.past.push(this.cur); if (this.past.length > this.L) this.past.shift();
+    this.cur = cloneFrame(this.C.ctl.step(command));
+    this.sim.teleport(this.cur);
+    return { fell: false, simMs: performance.now() - t0, policyMs: 0 };
   }
 
   buildCmd() {
@@ -95,9 +118,10 @@ class Driver {
 
   // one 60 Hz tick; returns {fell, simMs, policyMs}
   async tick(command) {
+    if (!this.physics) return this.tickKinematic(command);
     const P = this.plant, A = this.A;
     let action = this.zeros, policyMs = 0;
-    if (this.policyOn && this.policy) {
+    if (this.policy) {
       const t0 = performance.now();
       this.sim.buildObs(this.prevAction, this.obs);
       this.buildCmd();
@@ -174,16 +198,18 @@ async function main() {
   const keys = new Set();
   const updateBadge = () => {
     const b = $('badge');
-    b.className = drv.policyOn ? 'on' : 'off';
-    b.textContent = !policy ? 'POLICY N/A' : drv.policyOn ? 'POLICY ON' : 'POLICY OFF';
+    b.className = drv.physics ? 'on' : 'kin';
+    b.textContent = !drv.physics ? 'PHYSICS OFF · controller' : policy ? 'PHYSICS ON · WBC' : 'PHYSICS (PD only)';
   };
-  const togglePolicy = () => { if (policy) drv.policyOn = !drv.policyOn; updateBadge(); };
-  const resetReq = { pending: false };
-  $('badge').addEventListener('click', (e) => { togglePolicy(); e.currentTarget.blur(); });
+  // mode switches are applied between ticks, never while one is awaiting the policy
+  const req = { reset: false, physics: null };
+  const togglePhysics = () => { req.physics = !(req.physics ?? drv.physics); };
+  $('badge').addEventListener('click', (e) => { togglePhysics(); e.currentTarget.blur(); });
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
-    if (k === ' ' || e.code === 'Space') { e.preventDefault(); if (!e.repeat) resetReq.pending = true; return; }
-    if (k === 'p') { if (!e.repeat) togglePolicy(); return; }
+    if (k === ' ' || e.code === 'Space') { e.preventDefault(); if (!e.repeat) req.reset = true; return; }
+    if (k === 'p') { if (!e.repeat) togglePhysics(); return; }
+    if (k === 'v') { if (!e.repeat) renderer.showTraj = !renderer.showTraj; return; }
     if ('wasdqe'.includes(k) && k.length === 1) { keys.add(k); e.preventDefault(); }
   });
   window.addEventListener('keyup', (e) => keys.delete(e.key.toLowerCase()));
@@ -202,8 +228,9 @@ async function main() {
     if (busy) return;
     busy = true;
     try {
-      if (resetReq.pending) {
-        resetReq.pending = false; drv.reset([0, 0], 0); renderer.resetCamera(); acc = 0;
+      if (req.physics !== null) { drv.setPhysics(req.physics); req.physics = null; updateBadge(); }
+      if (req.reset) {
+        req.reset = false; drv.reset([0, 0], 0); renderer.resetCamera(); acc = 0;
       }
       let n = 0;
       while (acc >= DT && n < MAX_CATCHUP) {
@@ -214,12 +241,16 @@ async function main() {
       }
       if (n === MAX_CATCHUP) acc = Math.min(acc, DT);
       const q = sim.rootQuat();
+      renderer.setTrajectory(C.ctl.trajectory ? C.ctl.trajectory() : null);
       renderer.update(sim.data, sim.rootPos(), yawOfQuat(q), Math.max(DT, n * DT));
       if (now - statT > 500) {
         tickHz = ticks * 1000 / (now - statT); ticks = 0; statT = now;
-        $('stats').innerHTML =
-          `sim ${tickHz.toFixed(0)} Hz<br>step ${simMsAvg.toFixed(2)} ms · policy ${polMsAvg.toFixed(2)} ms<br>` +
-          `falls ${drv.falls} · drift ${drv.drift.toFixed(2)} m` + (C.stub ? '<br>controller: stub' : '');
+        $('stats').innerHTML = drv.physics
+          ? `sim ${tickHz.toFixed(0)} Hz<br>step ${simMsAvg.toFixed(2)} ms · policy ${polMsAvg.toFixed(2)} ms<br>` +
+            `falls ${drv.falls} · drift ${drv.drift.toFixed(2)} m`
+          : `controller ${tickHz.toFixed(0)} Hz · ${simMsAvg.toFixed(2)} ms<br>` +
+            `${C.ctl.clipClass ?? ''}<br><span class="clip">${C.ctl.clipName ?? ''}</span>`;
+        if (C.stub) $('stats').innerHTML += '<br>controller: stub';
       }
     } catch (e) {
       showError('Loop: ' + (e.stack || e)); throw e;

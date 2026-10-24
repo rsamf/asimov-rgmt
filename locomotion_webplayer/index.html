@@ -9,7 +9,7 @@
 { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }
 </script>
 <style>
-  :root { --fg: #10151c; --muted: #5b6573; --accent: #2f6fde; --panel: rgba(255,255,255,0.86); --on: #14a35a; --off: #c23b3b; }
+  :root { --fg: #10151c; --muted: #5b6573; --accent: #2f6fde; --panel: rgba(255,255,255,0.86); --on: #14a35a; --kin: #5b6573; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: #e8ecf1; color: var(--fg);
     font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
   #view { position: fixed; inset: 0; }
@@ -36,7 +36,8 @@
   #status { top: 16px; right: 16px; text-align: right; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; line-height: 1.6; }
   #badge { display: inline-block; padding: 4px 12px; border-radius: 999px; color: #fff; font: 700 13px system-ui, sans-serif;
     cursor: pointer; user-select: none; border: none; margin-bottom: 6px; }
-  #badge.on { background: var(--on); } #badge.off { background: var(--off); }
+  #badge.on { background: var(--on); } #badge.kin { background: var(--kin); }
+  #stats .clip { display: inline-block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; color: var(--muted); }
   #loading { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     background: #e8ecf1; z-index: 10; gap: 14px; }
   #loading .t { font-size: 20px; font-weight: 650; }
@@ -68,12 +69,13 @@
   <div id="keys">
     <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span><span>move</span>
     <span><kbd>Q</kbd><kbd>E</kbd></span><span>turn</span>
-    <span><kbd>P</kbd></span><span>policy on/off</span>
+    <span><kbd>P</kbd></span><span>physics on/off</span>
+    <span><kbd>V</kbd></span><span>direction overlay</span>
     <span><kbd>Space</kbd></span><span>reset</span>
   </div>
 </div>
 <div id="status" class="panel">
-  <button id="badge" class="off" title="Toggle policy (P)">POLICY OFF</button><br>
+  <button id="badge" class="on" title="Toggle physics (P)">PHYSICS ON · WBC</button><br>
   <span id="stats">—</span>
 </div>
 <div id="loading"><div class="t">Asimov Humanoid Playground</div><div id="bar"><div></div></div><div id="msg">Starting…</div></div>
